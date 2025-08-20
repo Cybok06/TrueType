@@ -10,6 +10,7 @@ clients_col       = db["clients"]
 payments_col      = db["payments"]            # client-side payments
 s_bdc_payment_col = db["s_bdc_payment"]       # central BDC payments
 bdc_col           = db["bdc"]
+cancellations_col = db["cancellations"]
 
 # ✅ Optional collections (existence-checked)
 _existing = set(db.list_collection_names())
@@ -28,12 +29,11 @@ def _role_ok():
 @cancel_bp.route("/orders/cancel", methods=["GET"])
 def page_cancel_orders():
     if not _role_ok(): abort(403)
-    recent_clients = list(clients_col.find({}, {"name":1}).sort("name", 1).limit(50))
+    recent_clients = list(clients_col.find({}, {"name":1}).sort("name", 1).limit(200))
     return render_template("partials/cancel_orders.html", clients=recent_clients)
 
 @cancel_bp.route("/orders/cancel/client/<client_id>/recent", methods=["GET"])
 def recent_orders_for_client(client_id):
-    """Return the client's 5 most recent orders + per-order confirmed paid_total."""
     if not _role_ok(): abort(403)
     coid = _oid(client_id)
     if not coid:
@@ -49,20 +49,16 @@ def recent_orders_for_client(client_id):
         ).sort("date",-1).limit(5)
     )
 
-    # ---- build paid_total map (confirmed only), handling ObjectId and string order_id ----
+    # build paid_total map (confirmed only), handling ObjectId and string order_id
     paid_map = {}
     if orders:
         oid_list = [o["_id"] for o in orders]
         str_list = [str(x) for x in oid_list]
-
-        # order_id stored as ObjectId
         for r in payments_col.aggregate([
             {"$match": {"order_id": {"$in": oid_list}, "status": "confirmed"}},
             {"$group": {"_id": "$order_id", "sum": {"$sum": "$amount"}}}
         ]):
             paid_map[str(r["_id"])] = float(r.get("sum") or 0.0)
-
-        # order_id stored as string
         for r in payments_col.aggregate([
             {"$match": {"order_id": {"$in": str_list}, "status": "confirmed"}},
             {"$group": {"_id": "$order_id", "sum": {"$sum": "$amount"}}}
@@ -70,7 +66,6 @@ def recent_orders_for_client(client_id):
             k = str(r["_id"])
             paid_map[k] = paid_map.get(k, 0.0) + float(r.get("sum") or 0.0)
 
-    # ---- normalize output ----
     out = []
     for o in orders:
         k = str(o["_id"])
@@ -84,14 +79,13 @@ def recent_orders_for_client(client_id):
             "npa_status": o.get("npa_status",""),
             "tts_status": o.get("tts_status",""),
             "total_debt": float(o.get("total_debt") or 0),
-            "paid_total": float(paid_map.get(k, 0.0)),   # ✅ added
+            "paid_total": float(paid_map.get(k, 0.0)),
             "date": (o.get("date") or datetime.utcnow()).isoformat()
         })
     return jsonify({"success": True, "orders": out})
 
 @cancel_bp.route("/orders/cancel/impact/<order_id>", methods=["GET"])
 def cancel_impact(order_id):
-    """Return a dry-run of what will be affected + confirmed paid sum for the order."""
     if not _role_ok(): abort(403)
     oid = _oid(order_id)
     if not oid:
@@ -103,7 +97,6 @@ def cancel_impact(order_id):
 
     oid_str = str(oid)
 
-    # sum client payments (CONFIRMED ONLY)
     paid_cursor = payments_col.aggregate([
         {"$match": {"order_id": {"$in":[oid, oid_str]}, "status": "confirmed"}},
         {"$group": {"_id": None, "sum": {"$sum": "$amount"}, "count": {"$sum": 1}}}
@@ -120,9 +113,8 @@ def cancel_impact(order_id):
         },
         "payments": {
             "count": int(paid_doc["count"]),
-            "sum": float(paid_doc["sum"] or 0.0),  # ✅ confirmed-only total paid
+            "sum": float(paid_doc["sum"] or 0.0),
         },
-        # ✅ match both ObjectId and string forms
         "s_bdc_payment": s_bdc_payment_col.count_documents({"order_id": {"$in":[oid, oid_str]}}),
         "bdc_payment_details_hits": bdc_col.count_documents(
             {"payment_details.order_id": {"$in":[oid, oid_str]}}
@@ -131,7 +123,6 @@ def cancel_impact(order_id):
                              if bdc_txn_col else 0),
         "tax_records": (tax_col.count_documents({"order_id":{"$in":[oid,oid_str]}})
                         if tax_col else 0),
-        # Convenience booleans
         "has_confirmed_payments": bool(paid_doc["count"] > 0),
         "delivered": (str(order.get("delivery_status","")).lower() == "delivered")
     }
@@ -139,12 +130,6 @@ def cancel_impact(order_id):
 
 @cancel_bp.route("/orders/cancel/refund/<order_id>", methods=["POST"])
 def refund_client_payments(order_id):
-    """
-    Clicking 'Refund' should:
-      - set payments.feedback='refunded'
-      - set payments.amount=0
-      - set the ORDER's total_debt=0 as well
-    """
     if not _role_ok(): abort(403)
     oid = _oid(order_id)
     if not oid:
@@ -152,7 +137,6 @@ def refund_client_payments(order_id):
 
     user = session.get("email") or session.get("user") or "system"
     now = datetime.utcnow()
-
     with db.client.start_session() as sess:
         with sess.start_transaction():
             res = payments_col.update_many(
@@ -161,18 +145,12 @@ def refund_client_payments(order_id):
                           "refunded_at": now, "refunded_by": user}},
                 session=sess
             )
-            # zero the order debt when refunding
-            orders_col.update_one(
-                {"_id": oid},
-                {"$set": {"total_debt": 0.0}},
-                session=sess
-            )
-
+            orders_col.update_one({"_id": oid},{"$set": {"total_debt": 0.0}}, session=sess)
     return jsonify({"success": True, "refunded_count": res.modified_count})
 
 @cancel_bp.route("/orders/cancel/execute/<order_id>", methods=["POST"])
 def execute_cancel(order_id):
-    """Delete side-effects and mark order/NPA/TTS cancelled (with audit)."""
+    """Delete side-effects and mark order/NPA/TTS cancelled (with audit + snapshot)."""
     if not _role_ok(): abort(403)
     data = request.get_json(silent=True) or {}
     reason = (data.get("reason") or "").strip()
@@ -201,6 +179,13 @@ def execute_cancel(order_id):
     user = session.get("email") or session.get("user") or "system"
     now = datetime.utcnow()
     oid_str = str(oid)
+
+    # capture paid_sum (confirmed only) for snapshot
+    paid_doc = payments_col.aggregate([
+        {"$match": {"order_id": {"$in":[oid, oid_str]}, "status": "confirmed"}},
+        {"$group": {"_id": None, "sum": {"$sum": "$amount"}}}
+    ])
+    paid_sum = float((next(paid_doc, {}) or {}).get("sum", 0.0) or 0.0)
 
     with db.client.start_session() as s:
         with s.start_transaction():
@@ -247,8 +232,24 @@ def execute_cancel(order_id):
                 session=s
             )
 
-            # Audit
-            db["cancellations"].insert_one({
+            # Build snapshot for durable history
+            client_doc = clients_col.find_one({"_id": order.get("client_id")}, {"name":1})
+            snapshot = {
+                "client_id": order.get("client_id"),
+                "client_name": (client_doc or {}).get("name"),
+                "product": order.get("product"),
+                "quantity": float(order.get("quantity") or 0),
+                "region": order.get("region"),
+                "status_before": order.get("status"),
+                "delivery_before": order.get("delivery_status"),
+                "npa_before": order.get("npa_status"),
+                "tts_before": order.get("tts_status"),
+                "debt_before": float(order.get("total_debt") or 0),
+                "paid_sum": paid_sum
+            }
+
+            # Audit record
+            cancellations_col.insert_one({
                 "order_id": oid,
                 "reason": reason,
                 "by_user": user,
@@ -258,7 +259,122 @@ def execute_cancel(order_id):
                     "bdc_payment_details_updates": bdc_pull.modified_count,
                     "bdc_transactions_deleted": (bdc_txn_del.deleted_count if bdc_txn_del else 0),
                     "tax_records_deleted": (tax_del.deleted_count if tax_del else 0),
-                }
+                },
+                "snapshot": snapshot
             }, session=s)
 
     return jsonify({"success": True, "message": "Order cancelled and postings removed"})
+
+# ===== Cancellation History APIs =====
+
+@cancel_bp.route("/orders/cancel/history", methods=["GET"])
+def cancel_history():
+    """Paginated history with filters: q, client_id, from, to."""
+    if not _role_ok(): abort(403)
+
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+        size = min(max(int(request.args.get("size", 10)), 1), 50)
+    except Exception:
+        page, size = 1, 10
+
+    q = (request.args.get("q") or "").strip()
+    client_id = request.args.get("client_id") or ""
+    date_from = request.args.get("from") or ""
+    date_to   = request.args.get("to") or ""
+
+    filt = {}
+    # date range
+    dt = {}
+    if date_from:
+        try: dt["$gte"] = datetime.fromisoformat(date_from)
+        except Exception: pass
+    if date_to:
+        try:
+            # include entire day for "to"
+            dt["$lte"] = datetime.fromisoformat(date_to) .replace(hour=23, minute=59, second=59, microsecond=999999)
+        except Exception: pass
+    if dt: filt["at"] = dt
+
+    # free text (reason / product / order id / client name)
+    ors = []
+    if q:
+        ors.append({"reason": {"$regex": q, "$options": "i"}})
+        # try order id substring
+        ors.append({"order_id": {"$eq": _oid(q)}} if _oid(q) else {"order_id": {"$regex": q, "$options": "i"}})
+        # product/client via snapshot (if present)
+        ors.append({"snapshot.product": {"$regex": q, "$options": "i"}})
+        ors.append({"snapshot.client_name": {"$regex": q, "$options": "i"}})
+    if ors: filt["$or"] = ors
+
+    if client_id and _oid(client_id):
+        filt["$or"] = (filt.get("$or") or []) + [
+            {"snapshot.client_id": _oid(client_id)},
+            {"order.client_id": _oid(client_id)}  # fallback through lookup
+        ]
+
+    pipeline = [
+        {"$match": filt},
+        {"$sort": {"at": -1}},
+        {"$facet": {
+            "data": [
+                {"$skip": (page-1)*size},
+                {"$limit": size},
+                # look up order (live) to show product if snapshot missing
+                {"$lookup": {
+                    "from": "orders",
+                    "localField": "order_id",
+                    "foreignField": "_id",
+                    "as": "order"
+                }},
+                {"$unwind": {"path": "$order", "preserveNullAndEmptyArrays": True}},
+                # lookup client for display if needed
+                {"$lookup": {
+                    "from": "clients",
+                    "localField": "order.client_id",
+                    "foreignField": "_id",
+                    "as": "client"
+                }},
+                {"$unwind": {"path": "$client", "preserveNullAndEmptyArrays": True}},
+                # shape minimal fields to reduce payload
+                {"$project": {
+                    "_id": 1, "order_id": 1, "reason": 1, "by_user": 1, "at": 1, "deleted": 1,
+                    "snapshot": 1, "order.product": 1, "order.quantity": 1, "order.cancelled_at":1, "order.client_id":1,
+                    "client.name": 1
+                }}
+            ],
+            "count": [{"$count": "total"}]
+        }}
+    ]
+
+    res = list(cancellations_col.aggregate(pipeline))
+    data = (res[0]["data"] if res else [])
+    total = (res[0]["count"][0]["total"] if res and res[0]["count"] else 0)
+
+    # Convert ObjectIds to strings for frontend safety
+    for x in data:
+        x["_id"] = str(x["_id"])
+        if isinstance(x.get("order_id"), ObjectId):
+            x["order_id"] = str(x["order_id"])
+
+    return jsonify({"success": True, "items": data, "total": total, "page": page, "size": size})
+
+@cancel_bp.route("/orders/cancel/history/item/<cid>", methods=["GET"])
+def cancel_history_item(cid):
+    """Single item detail (with lookups)."""
+    if not _role_ok(): abort(403)
+    oid = _oid(cid)
+    if not oid: return jsonify({"success": False, "error": "Invalid id"}), 400
+
+    pipeline = [
+        {"$match": {"_id": oid}},
+        {"$lookup": {"from": "orders", "localField": "order_id", "foreignField": "_id", "as": "order"}},
+        {"$unwind": {"path":"$order", "preserveNullAndEmptyArrays": True}},
+        {"$lookup": {"from": "clients", "localField": "order.client_id", "foreignField": "_id", "as": "client"}},
+        {"$unwind": {"path":"$client", "preserveNullAndEmptyArrays": True}},
+    ]
+    x = next(cancellations_col.aggregate(pipeline), None)
+    if not x: return jsonify({"success": False, "error": "Not found"}), 404
+    x["_id"] = str(x["_id"])
+    if isinstance(x.get("order_id"), ObjectId): x["order_id"] = str(x["order_id"])
+    return jsonify({"success": True, "item": x})
