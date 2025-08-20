@@ -56,6 +56,99 @@
       .toolbar .form-select, .toolbar .form-control { max-width: 100%; flex: 1 1 auto; }
     }
   </style>
+  <style>
+  /* Banner look */
+  .welcome-wrap {
+    position: relative;
+    border-radius: 18px;
+    padding: 28px 24px;
+    background: linear-gradient(135deg, #0d6efd 0%, #20c997 55%, #0dcaf0 100%);
+    color: #fff;
+    box-shadow: 0 18px 38px rgba(13, 110, 253, 0.25), 0 6px 14px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .welcome-title {
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: .3px;
+    text-shadow: 0 2px 10px rgba(0,0,0,.18);
+  }
+  .welcome-sub {
+    opacity: .95;
+    text-shadow: 0 1px 6px rgba(0,0,0,.18);
+  }
+
+  /* Accent shapes */
+  .welcome-wrap::before,
+  .welcome-wrap::after {
+    content: "";
+    position: absolute;
+    inset: auto auto  -60px -60px;
+    width: 220px; height: 220px;
+    background: radial-gradient(closest-side, rgba(255,255,255,.25), rgba(255,255,255,0));
+    transform: rotate(15deg);
+    filter: blur(2px);
+    z-index: -1;
+  }
+  .welcome-wrap::after {
+    inset: -70px -70px auto auto;
+    width: 280px; height: 280px;
+    background: radial-gradient(closest-side, rgba(255,255,255,.18), rgba(255,255,255,0));
+    transform: rotate(-5deg);
+  }
+
+  /* Animations */
+  .animate-slide-in {
+    opacity: 0;
+    transform: translateY(24px) scale(.98);
+    animation: slideIn .75s cubic-bezier(.16,.84,.44,1) .08s forwards;
+  }
+  .animate-bounce-in {
+    opacity: 0;
+    transform: translateY(12px) scale(.96);
+    animation: bounceIn .9s cubic-bezier(.25,.9,.25,1.2) .06s forwards;
+  }
+
+  @keyframes slideIn {
+    0% { opacity: 0; transform: translateY(28px) scale(.985); }
+    60% { opacity: 1; transform: translateY(-2px) scale(1.005); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes bounceIn {
+    0% { opacity: 0; transform: translateY(18px) scale(.96); }
+    55% { opacity: 1; transform: translateY(-6px) scale(1.015); }
+    80% { transform: translateY(3px) scale(.997); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  /* Subtle shimmer on the name */
+  .shimmer {
+    position: relative;
+    display: inline-block;
+  }
+  .shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.35) 45%, rgba(255,255,255,0) 80%);
+    transform: translateX(-120%);
+    animation: shimmer 2.2s ease-in-out .7s infinite;
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
+  @keyframes shimmer {
+    0%   { transform: translateX(-120%); }
+    60%  { transform: translateX(120%); }
+    100% { transform: translateX(120%); }
+  }
+
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-slide-in, .animate-bounce-in { animation: none !important; opacity: 1 !important; transform: none !important; }
+    .shimmer::after { animation: none !important; display: none; }
+  }
+</style>
 </head>
 <body>
 
@@ -64,8 +157,30 @@
   <a class="navbar-brand d-flex align-items-center" href="#">
     <img src="https://res.cloudinary.com/dl2ipzxyk/image/upload/v1751107241/logo_ijmteg.avif" alt="Logo" class="me-2">
   </a>
-  <div class="ms-auto d-flex align-items-center">
-    <button class="btn btn-outline-dark me-2" onclick="toggleDarkMode()" title="Toggle dark mode">
+
+  <div class="ms-auto d-flex align-items-center gap-3">
+    <div class="container mt-3">
+  <section id="welcomeBanner" class="welcome-wrap animate-slide-in">
+    <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center gap-3">
+      <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-white bg-opacity-25"
+           style="width:64px;height:64px;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35);">
+        <i class="bi bi-emoji-smile" style="font-size:1.6rem;"></i>
+      </div>
+      <div class="flex-grow-1">
+        <!-- Headline -->
+        <h1 class="welcome-title display-5 mb-1">
+          Welcome,
+          <span class="shimmer">
+            {{ client_name or session.get('client_name') or (client.name if client else 'Client') }}
+          </span>
+          👋
+        </h1>
+        <!-- Subtext -->
+        <div class="welcome-sub fs-6">
+          Glad to have you back. Your latest orders and payments are summarized below.
+        </div>
+      </div>
+    <button class="btn btn-outline-dark" onclick="toggleDarkMode()" title="Toggle dark mode">
       <i class="bi bi-moon"></i>
     </button>
     <a href="/logout" class="btn btn-danger">Logout</a>
@@ -426,6 +541,33 @@
   recalcTableMetrics();
   applyFilters();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) recalcTableMetrics(); });
+</script>
+<script>
+  // Choose animation type dynamically (slide or bounce). Keep slide as default; bounce if the user revisits.
+  (function () {
+    try {
+      const banner = document.getElementById('welcomeBanner');
+      if (!banner) return;
+
+      const key = 'clientBannerSeen';
+      const seen = sessionStorage.getItem(key);
+      banner.classList.remove('animate-slide-in','animate-bounce-in');
+      banner.classList.add(seen ? 'animate-bounce-in' : 'animate-slide-in');
+      sessionStorage.setItem(key, '1');
+
+      // Optional: trigger on intersection for extra polish if banner starts below fold
+      const io = new IntersectionObserver(entries => {
+        entries.forEach(e => {
+          if (e.isIntersecting) {
+            banner.style.willChange = 'transform, opacity';
+            setTimeout(() => (banner.style.willChange = 'auto'), 1000);
+            io.disconnect();
+          }
+        });
+      }, { threshold: .4 });
+      io.observe(banner);
+    } catch (e) {}
+  })();
 </script>
 
 </body>
