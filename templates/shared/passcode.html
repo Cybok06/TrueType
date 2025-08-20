@@ -58,6 +58,9 @@
 
     .error-box { border-radius: 10px; }
     footer { color:#94a3b8; font-size:.85rem; }
+    .scope-pill { background:#0b1320; color:#fff; border-radius:999px; padding:.2rem .6rem; font-size:.85rem; }
+    noscript .noscript-input { display:block; }
+    .noscript-input { display:none; }
   </style>
 </head>
 <body>
@@ -79,7 +82,8 @@
       <div class="card p-4 p-sm-5">
         <div class="text-center mb-3">
           <h4 class="title mb-1">Shared Deliveries</h4>
-          <div class="subtitle">BDC: <strong class="text-primary">{{ bdc_name }}</strong></div>
+          <!-- Scope label (can be “OMC: …”, “3 BDCs”, or a single BDC name) -->
+          <div class="subtitle">Scope: <span class="scope-pill" title="Share scope">{{ bdc_name }}</span></div>
         </div>
 
         <p class="subtitle text-center mb-4">Enter the 5‑digit passcode to continue.</p>
@@ -89,7 +93,7 @@
         {% endif %}
 
         <!-- Form -->
-        <form id="codeForm" method="post" action="{{ url_for('shared_links.shared_landing', token=token) }}" autocomplete="off" novalidate>
+        <form id="codeForm" method="post" action="{{ url_for('shared_links.shared_landing', token=token) }}" autocomplete="one-time-code" novalidate>
           <!-- Hidden field that receives the combined code before submit -->
           <input type="hidden" name="passcode" id="passcode" />
 
@@ -104,10 +108,17 @@
 
           <div class="d-flex justify-content-between align-items-center mb-3">
             <small class="subtitle">Exactly 5 digits.</small>
-            <button type="button" id="toggleMask" class="toggle-visibility">Show</button>
+            <button type="button" id="toggleMask" class="toggle-visibility" aria-pressed="false" aria-controls="d1 d2 d3 d4 d5">Show</button>
           </div>
 
-          <button type="submit" class="btn btn-primary w-100">Unlock</button>
+          <!-- No-JS fallback field -->
+          <div class="noscript-input">
+            <label class="form-label">Passcode</label>
+            <input type="password" name="passcode_noscript" class="form-control" pattern="\d{5}" maxlength="5" minlength="5" inputmode="numeric" placeholder="*****">
+            <div class="form-text">If JavaScript is disabled, enter all 5 digits here.</div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100" aria-label="Unlock shared deliveries">Unlock</button>
         </form>
       </div>
 
@@ -126,24 +137,19 @@
     const form = document.getElementById('codeForm');
     const toggle = document.getElementById('toggleMask');
 
-    // focus first on load
-    inputs[0].focus();
+    // focus first on load when JS is enabled
+    if (inputs.length) inputs[0].focus();
 
     // Enforce digits only, auto-advance, and backspace behavior
     inputs.forEach((inp, idx) => {
-      inp.addEventListener('input', (e) => {
-        // keep only one digit
+      inp.addEventListener('input', () => {
         inp.value = (inp.value || '').replace(/\D/g, '').slice(0,1);
-        if (inp.value && idx < inputs.length - 1) {
-          inputs[idx + 1].focus();
-        }
+        if (inp.value && idx < inputs.length - 1) inputs[idx + 1].focus();
         maybeSubmit();
       });
 
       inp.addEventListener('keydown', (e) => {
-        if (e.key === 'Backspace' && !inp.value && idx > 0) {
-          inputs[idx - 1].focus();
-        }
+        if (e.key === 'Backspace' && !inp.value && idx > 0) inputs[idx - 1].focus();
         if (e.key === 'ArrowLeft' && idx > 0) inputs[idx - 1].focus();
         if (e.key === 'ArrowRight' && idx < inputs.length - 1) inputs[idx + 1].focus();
       });
@@ -165,6 +171,7 @@
       const showing = inputs[0].classList.toggle('show');
       for (let i = 1; i < inputs.length; i++) inputs[i].classList.toggle('show', showing);
       toggle.textContent = showing ? 'Hide' : 'Show';
+      toggle.setAttribute('aria-pressed', showing ? 'true' : 'false');
     });
 
     // Build hidden value and submit when all 5 filled
@@ -177,10 +184,15 @@
       }
     }
 
-    // On manual submit, ensure hidden is set correctly
+    // On manual submit, ensure hidden is set; fallback if JS-only cells are empty
     form.addEventListener('submit', (e) => {
-      hidden.value = inputs.map(i => i.value).join('');
-      if (hidden.value.length !== 5) {
+      const code = inputs.map(i => i.value).join('');
+      const noscript = document.querySelector('input[name="passcode_noscript"]');
+      if (code.length === 5) {
+        hidden.value = code;
+      } else if (noscript && noscript.value && /^\d{5}$/.test(noscript.value)) {
+        hidden.value = noscript.value;
+      } else {
         e.preventDefault();
       }
     });
