@@ -351,7 +351,8 @@
   }
 
   // Build message text from the modal + form (NO footer, NO returns/amounts)
-  function buildMessage($form, includeDepot=false){
+  // Build message text from the modal + form (NO footer, NO returns/amounts)
+function buildMessage($form, includeDepot=false){
   const id = $form.data('id');
   const $modal = $(`#detailsModal${id}`);
 
@@ -364,12 +365,19 @@
   const region  = $modal.data('region') || $form.data('region') || '';
   const depot   = $form.find('.depot_input').val() || $modal.data('depot') || '';
 
-  const client  = $form.data('client') || 'Client';
-  const clientId= $form.data('clientid') || '';
+  const client   = $form.data('client') || 'Client';
+  const clientId = $form.data('clientid') || '';
 
-  let lines = [
-    `ORDER DETAILS`,
+  // Grab names from selects
+  const omcName = $form.find('.omc-select').val() || ''; // value is the OMC name
+  const $bdcSel = $form.find('.bdc-select option:selected');
+  const bdcName = ($bdcSel.data('bdc-name') || '').toString().trim() || ($bdcSel.text() || '').trim();
+
+  const lines = [
+    'ORDER DETAILS',
     `Client: ${client} (${clientId})`,
+    `OMC: ${omcName || 'N/A'}`,
+    `BDC: ${bdcName || 'N/A'}`,
     `Product: ${product}`,
     `Quantity: ${qty} L`,
     `Region: ${region}`,
@@ -377,13 +385,12 @@
     `Driver: ${driver}${dphone ? ' ('+dphone+')' : ''}`
   ];
 
-  if(includeDepot){ 
-    lines.push(`Depot: ${depot}`); 
+  if (includeDepot){
+    lines.push(`Depot: ${depot}`);
   }
 
   return lines.join('\n');
 }
-
   // Enable/disable BDC select
   function setBDCState($form, disabled){
     const $bdc = $form.find('.bdc-select');
