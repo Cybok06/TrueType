@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Submit Order | Oil ERP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+  <link rel="icon" href="https://res.cloudinary.com/dl2ipzxyk/image/upload/v1751107241/logo_ijmteg.avif" />
+
+  <style>
+    body {
+      background: linear-gradient(to bottom right, #f4f6f9, #e9ecef);
+      font-family: "Segoe UI", sans-serif;
+    }
+    .navbar-brand img { height: 40px; }
+    .form-container {
+      max-width: 900px; margin: 60px auto; background: #ffffff;
+      padding: 40px 30px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.05);
+    }
+    .form-title { font-weight: 700; margin-bottom: 30px; color: #0d6efd; text-align: center; }
+    label.form-label { font-weight: 500; }
+    .btn-primary { background-color: #0d6efd; border: none; font-weight: 600; }
+    .btn-primary:hover { background-color: #0b5ed7; }
+    .back-link { display: inline-flex; align-items: center; margin-bottom: 20px; color: #0d6efd; text-decoration: none; }
+    .back-link i { margin-right: 6px; }
+    .alert { font-size: .95rem; }
+
+    /* Price badges */
+    .price-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      font-weight: 600;
+      border: 1px solid #0d6efd;
+      background: #eef5ff;
+      color: #0b5ed7;
+      border-radius: 999px;
+      padding: .35rem .75rem;
+      white-space: nowrap;
+    }
+    .price-pill.total {
+      background: #0d6efd;
+      color: #fff;
+      border-color: #0d6efd;
+    }
+    .price-badges {
+      display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+    }
+    @media (max-width: 575.98px){
+      .price-badges { margin-top: .5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-light bg-white shadow-sm px-3">
+  <a class="navbar-brand d-flex align-items-center" href="#">
+    <img src="https://res.cloudinary.com/dl2ipzxyk/image/upload/v1751107241/logo_ijmteg.avif" alt="Logo">
+    <span class="ms-2 fw-bold text-primary">Oil ERP</span>
+  </a>
+</nav>
+
+<!-- Main Content -->
+<div class="container">
+  <div class="form-container">
+    <a href="/client/dashboard" class="back-link"><i class="bi bi-arrow-left"></i> Back to Dashboard</a>
+    <h3 class="form-title">Submit New Order</h3>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST">
+      <div class="row g-3">
+        <!-- Product + badges (S-Price, S-Tax, Total/L) -->
+        <div class="col-md-6">
+          <label class="form-label d-flex align-items-center justify-content-between flex-wrap">
+            <span>Product</span>
+            <span class="price-badges">
+              <span id="sPriceBadge" class="price-pill">
+                <i class="bi bi-tag"></i>
+                S-Price: GHS <span id="sPriceVal">0.00</span>
+              </span>
+              <span id="sTaxBadge" class="price-pill">
+                <i class="bi bi-receipt"></i>
+                S-Tax: GHS <span id="sTaxVal">0.00</span>
+              </span>
+              <span id="sTotalBadge" class="price-pill total">
+                <i class="bi bi-calculator"></i>
+                Total/L: GHS <span id="sTotalVal">0.00</span>
+              </span>
+            </span>
+          </label>
+          <select class="form-select" name="product" id="productSelect" required>
+            <option value="">Select Product</option>
+            {% for product in products %}
+              <option
+                value="{{ product.name }}"
+                data-sprice="{{ '%.2f'|format(product.s_price or 0) }}"
+                data-pprice="{{ '%.2f'|format(product.p_price or 0) }}"
+                data-stax="{{ '%.2f'|format(product.s_tax   or 0) }}"
+                data-ptax="{{ '%.2f'|format(product.p_tax   or 0) }}"
+              >
+                {{ product.name }}{% if product.description %} - {{ product.description }}{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Quantity</label>
+          <select class="form-select" name="quantity" id="quantity" required>
+            <option value="">Select Quantity</option>
+            <option value="13500">13,500</option>
+            <option value="18000">18,000</option>
+            <option value="27000">27,000</option>
+            <option value="36000">36,000</option>
+            <option value="40500">40,500</option>
+            <option value="45000">45,000</option>
+            <option value="54000">54,000</option>
+          </select>
+        </div>
+
+        <!-- Truck Selection -->
+        <div class="col-md-12">
+          <label class="form-label">Hire Truck (Optional)</label>
+          <select class="form-select" id="truck_selector">
+            <option value="">-- Select Available Truck (Optional) --</option>
+            {% for truck in trucks %}
+              <option
+                value="{{ truck.truck_number }}"
+                data-driver="{{ truck.driver_name }}"
+                data-phone="{{ truck.driver_phone }}"
+                data-capacity="{{ truck.capacity }}"
+              >
+                {{ truck.truck_number }} - {{ truck.driver_name }} ({{ truck.capacity }}L)
+              </option>
+            {% endfor %}
+          </select>
+          <small class="text-muted">You may also enter truck details manually below.</small>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Vehicle Number</label>
+          <input type="text" class="form-control" name="vehicle_number" id="vehicle_number" placeholder="Enter or select above" required>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Destination</label>
+          <input type="text" class="form-control" name="region" placeholder="e.g. Western Region" required>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Driver's Name</label>
+          <input type="text" class="form-control" name="driver_name" id="driver_name" placeholder="Enter or auto-filled from truck" required>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Driver's Phone</label>
+          <input type="tel" class="form-control" name="driver_phone" id="driver_phone" placeholder="Enter or auto-filled from truck" required>
+        </div>
+
+        <div class="d-grid mt-4">
+          <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-check-circle me-1"></i>Submit Order
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  // ---------- Truck -> autofill fields + quantity ----------
+  const truckSel = document.getElementById('truck_selector');
+  const vehicleEl = document.getElementById('vehicle_number');
+  const driverEl  = document.getElementById('driver_name');
+  const phoneEl   = document.getElementById('driver_phone');
+  const qtySel    = document.getElementById('quantity');
+
+  function parseCapacity(raw){
+    if (!raw) return null;
+    const num = String(raw).replace(/[^\d]/g, '');
+    const n = parseInt(num, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  function selectQuantityByCapacity(cap){
+    if (!cap) return;
+    const capStr = String(cap);
+    const prior = qtySel.querySelector('option[data-dyn="1"]');
+    if (prior) prior.remove();
+    const has = Array.from(qtySel.options).some(o => o.value === capStr);
+    if (has){ qtySel.value = capStr; return; }
+    const label = cap.toLocaleString() + ' (from truck)';
+    const opt = new Option(label, capStr, true, true);
+    opt.setAttribute('data-dyn', '1');
+    qtySel.add(opt);
+  }
+
+  truckSel.addEventListener('change', function(){
+    const opt = this.options[this.selectedIndex];
+    if (!opt || !opt.value){
+      vehicleEl.value = '';
+      driverEl.value  = '';
+      phoneEl.value   = '';
+      qtySel.value    = '';
+      const prior = qtySel.querySelector('option[data-dyn="1"]');
+      if (prior) prior.remove();
+      return;
+    }
+    vehicleEl.value = opt.value || '';
+    driverEl.value  = opt.getAttribute('data-driver') || '';
+    phoneEl.value   = opt.getAttribute('data-phone')  || '';
+    const cap = parseCapacity(opt.getAttribute('data-capacity'));
+    selectQuantityByCapacity(cap);
+  });
+
+  // ---------- S-Price / S-Tax / Total badges ----------
+  const productSelect = document.getElementById('productSelect');
+  const sPriceVal = document.getElementById('sPriceVal');
+  const sTaxVal   = document.getElementById('sTaxVal');
+  const sTotalVal = document.getElementById('sTotalVal');
+
+  function fmt(n){
+    const num = Number(n);
+    return Number.isFinite(num)
+      ? num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : '0.00';
+  }
+
+  async function fetchPricePack(name){
+    try{
+      const res = await fetch(`/client/product_price?name=${encodeURIComponent(name)}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data && data.success) {
+        return {
+          s_price: Number(data.s_price || 0),
+          s_tax:   Number(data.s_tax   || 0),
+          s_total: Number(data.s_total || 0)
+        };
+      }
+    }catch(e){ /* ignore */ }
+    return null;
+  }
+
+  async function updatePriceBadges(){
+    const opt = productSelect.options[productSelect.selectedIndex];
+    if (!opt || !opt.value){
+      sPriceVal.textContent = '0.00';
+      sTaxVal.textContent   = '0.00';
+      sTotalVal.textContent = '0.00';
+      return;
+    }
+
+    // Prefer <option> data-* for speed
+    let sprice = Number(opt.getAttribute('data-sprice') || 0);
+    let stax   = Number(opt.getAttribute('data-stax')   || 0);
+
+    // If missing, fallback to API
+    if (!Number.isFinite(sprice) || !Number.isFinite(stax)) {
+      const pack = await fetchPricePack(opt.value);
+      if (pack){
+        sprice = pack.s_price;
+        stax   = pack.s_tax;
+      }
+    }
+
+    const stotal = (Number.isFinite(sprice) ? sprice : 0) + (Number.isFinite(stax) ? stax : 0);
+
+    sPriceVal.textContent = fmt(sprice);
+    sTaxVal.textContent   = fmt(stax);
+    sTotalVal.textContent = fmt(stotal);
+  }
+
+  productSelect.addEventListener('change', updatePriceBadges);
+  // Initialize on load (if first option preselected)
+  updatePriceBadges();
+</script>
+
+</body>
+</html>

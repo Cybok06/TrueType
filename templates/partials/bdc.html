@@ -1,0 +1,407 @@
+<div class="container py-4">
+  <!-- 🔹 Title, New Button & Search -->
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <h4 class="fw-bold text-primary mb-0">💼 BDC Accounts</h4>
+    <div class="d-flex align-items-center gap-2 ms-md-auto">
+      <div class="input-group">
+        <input id="bdc-search-input" type="search" class="form-control" placeholder="Search name, phone, location, rep…" />
+        <button id="bdc-search-btn" class="btn btn-outline-primary">Search</button>
+        <button id="bdc-clear-btn" class="btn btn-outline-secondary">Reset</button>
+      </div>
+      <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#addBDCSection">
+        ➕ New BDC
+      </button>
+    </div>
+  </div>
+
+  <!-- 🔹 Register Form -->
+  <div id="addBDCSection" class="collapse mb-4">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h6 class="mb-3 fw-semibold">Register New BDC</h6>
+        <div class="row g-3">
+          <div class="col-md-4"><input type="text" id="bdc-name" class="form-control" placeholder="Enter BDC Name" /></div>
+          <div class="col-md-4"><input type="text" id="bdc-phone" class="form-control" placeholder="Phone Number" /></div>
+          <div class="col-md-4"><input type="text" id="bdc-location" class="form-control" placeholder="Location" /></div>
+          <div class="col-md-6"><input type="text" id="bdc-rep-name" class="form-control" placeholder="Rep Name" /></div>
+          <div class="col-md-6"><input type="text" id="bdc-rep-phone" class="form-control" placeholder="Rep Phone" /></div>
+          <div class="col-12 text-end">
+            <button class="btn btn-primary px-4" onclick="addBDC()">Create BDC</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🔹 Results Summary -->
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <small id="bdc-results-summary" class="text-muted"></small>
+  </div>
+
+  <!-- 🔹 BDC Cards List -->
+  <div class="row" id="bdc-list">
+    {% for bdc in bdcs %}
+      <div class="col-sm-6 col-md-4 col-lg-3 mb-4 bdc-item"
+           data-id="{{ bdc._id }}"
+           data-name="{{ (bdc.name or '')|e }}"
+           data-phone="{{ (bdc.phone or '')|e }}"
+           data-location="{{ (bdc.location or '')|e }}"
+           data-rep-name="{{ (bdc.rep_name or '')|e }}"
+           data-rep-phone="{{ (bdc.rep_phone or '')|e }}"
+           data-pending-amount="{{ '%.2f'|format((bdc.pending_amount or 0)|float) }}"
+           data-pending-count="{{ bdc.pending_count or 0 }}">
+        <a href="/bdc/profile/{{ bdc._id }}" class="stretched-link d-none" aria-hidden="true"></a>
+        <div class="bdc-card shadow-sm h-100 position-relative {{ 'has-unpaid' if (bdc.pending_count or 0) > 0 else '' }}">
+          {% if (bdc.pending_count or 0) > 0 %}
+          <div class="ribbon ribbon-danger" title="Unpaid items present">
+            Unpaid&nbsp;•&nbsp;{{ '%.2f'|format((bdc.pending_amount or 0)|float) }}
+          </div>
+          {% endif %}
+          <div class="bdc-card-bg"></div>
+          <div class="bdc-card-header text-white text-center py-3 position-relative">
+            <h5 class="mb-1 fw-bold">{{ bdc.name }}</h5>
+            <small class="text-white-50">Bulk Distributor</small>
+          </div>
+          <div class="bdc-card-body p-3 position-relative">
+            <p class="mb-1">
+              <i class="bi bi-telephone-fill me-2 text-muted"></i>
+              <a href="tel:{{ (bdc.phone or '')|e }}" class="text-decoration-none fw-semibold">
+                {{ bdc.phone or '—' }}
+              </a>
+            </p>
+            <p class="mb-1">
+              <i class="bi bi-geo-alt-fill me-2 text-muted"></i>{{ bdc.location or '—' }}
+            </p>
+            <p class="mb-0">
+              <i class="bi bi-person-badge me-2 text-muted"></i>{{ bdc.rep_name or '—' }}
+              {% if bdc.rep_phone %} · <a href="tel:{{ (bdc.rep_phone)|e }}" class="text-decoration-none">{{ bdc.rep_phone }}</a>{% endif %}
+            </p>
+          </div>
+          <div class="bdc-card-footer d-flex justify-content-between align-items-center p-3">
+            <a class="btn btn-sm btn-outline-secondary" href="/bdc/profile/{{ bdc._id }}">
+              View
+            </a>
+            <button class="btn btn-sm btn-primary edit-bdc-btn" 
+                    data-bdc-id="{{ bdc._id }}">
+              <i class="bi bi-pencil-square me-1"></i>Edit
+            </button>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <!-- 🔹 Pagination -->
+  <nav aria-label="BDC pagination" class="mt-3">
+    <ul id="bdc-pagination" class="pagination justify-content-center mb-0"></ul>
+  </nav>
+</div>
+
+<!-- 🔸 Styles -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+<style>
+  .bdc-card {
+    border-radius: 1rem;
+    overflow: hidden;
+    background: #ffffff;
+    position: relative;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid #eef2f7;
+  }
+  .bdc-card:hover { transform: translateY(-5px); box-shadow: 0 10px 25px rgba(0,0,0,.08); }
+  .bdc-card-header {
+    background: linear-gradient(135deg, #0d6efd, #4facfe);
+    border-top-left-radius: 1rem; border-top-right-radius: 1rem; z-index: 1;
+  }
+  .bdc-card-bg { position: absolute; inset: 0; background-image:url('https://www.transparenttextures.com/patterns/cubes.png'); opacity:.04; z-index:0; }
+  .bdc-card-body { font-size: .9rem; z-index:1; }
+  .bdc-card-footer { background:#fafbff; border-top:1px solid #eef2f7; }
+  .bdc-card.has-unpaid { border-color:#ffe1e1; box-shadow: 0 0 0 3px rgba(220,53,69,.06); }
+  .ribbon {
+    position:absolute; top:12px; left:-6px; padding:4px 10px;
+    font-size:.75rem; font-weight:600; color:#fff; z-index:2;
+    border-top-right-radius:8px; border-bottom-right-radius:8px;
+    box-shadow:0 2px 8px rgba(0,0,0,.12);
+  }
+  .ribbon-danger { background: linear-gradient(135deg,#dc3545,#ff6b6b); }
+  .pagination .page-link { border-radius: .5rem; }
+</style>
+
+<!-- ✅ Success Modal -->
+<div class="modal fade" id="bdcSuccessModal" tabindex="-1" aria-labelledby="bdcSuccessModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content shadow">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title" id="bdcSuccessModalLabel">✅ BDC Registered</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <p class="mb-2">The BDC has been successfully registered.</p>
+        <button class="btn btn-sm btn-primary mt-2" onclick="location.reload()">OK, Reload</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ✏️ Edit BDC Modal -->
+<div class="modal fade" id="editBDCModal" tabindex="-1" aria-labelledby="editBDCModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title" id="editBDCModalLabel"><i class="bi bi-pencil-square me-2"></i>Edit BDC Details</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="edit-bdc-form" class="row g-3">
+          <input type="hidden" id="edit-bdc-id" />
+          <div class="col-md-6">
+            <label class="form-label">BDC Name</label>
+            <input type="text" id="edit-bdc-name" class="form-control" placeholder="BDC Name" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Location</label>
+            <input type="text" id="edit-bdc-location" class="form-control" placeholder="Location" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Phone</label>
+            <input type="text" id="edit-bdc-phone" class="form-control" placeholder="Phone" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Rep Name</label>
+            <input type="text" id="edit-bdc-rep-name" class="form-control" placeholder="Rep Name" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Rep Phone</label>
+            <input type="text" id="edit-bdc-rep-phone" class="form-control" placeholder="Rep Phone" />
+          </div>
+        </form>
+        <div class="d-flex align-items-center gap-2 small mt-2 text-muted">
+          <i class="bi bi-info-circle"></i>
+          You can update one or more fields. Name changes must be unique.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="save-bdc-btn">
+          <span class="spinner-border spinner-border-sm me-2 d-none" id="save-bdc-spinner"></span>
+          Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== Build data from server-rendered data-* attributes =====
+  const seedNodes = Array.from(document.querySelectorAll('.bdc-item'));
+  const bdcsData = seedNodes.map(n => ({
+    id: n.dataset.id || '',
+    name: n.dataset.name || '',
+    phone: n.dataset.phone || '',
+    location: n.dataset.location || '',
+    rep_name: n.dataset.repName || '',
+    rep_phone: n.dataset.repPhone || '',
+    pending_amount: Number(n.dataset.pendingAmount || 0),
+    pending_count: Number(n.dataset.pendingCount || 0),
+  }));
+
+  // Client rendering state
+  const PAGE_SIZE = 10;
+  let currentPage = 1, currentQuery = '';
+  let filtered = [...bdcsData];
+  const $list = document.getElementById('bdc-list');
+  const $pager = document.getElementById('bdc-pagination');
+  const $summary = document.getElementById('bdc-results-summary');
+  const $q = document.getElementById('bdc-search-input');
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"'`=\/]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;','=':'&#61;','/':'&#47;'}[c]));
+  }
+
+  function buildCard(item) {
+    const unpaid = (item.pending_count || 0) > 0;
+    const profileUrl = `/bdc/profile/${item.id}`;
+    return `
+      <div class="col-sm-6 col-md-4 col-lg-3 mb-4">
+        <div class="bdc-card shadow-sm h-100 position-relative ${unpaid ? 'has-unpaid' : ''}">
+          ${unpaid ? `<div class="ribbon ribbon-danger" title="Unpaid items present">
+            Unpaid • ${Number(item.pending_amount).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
+          </div>` : ''}
+          <div class="bdc-card-bg"></div>
+          <div class="bdc-card-header text-white text-center py-3 position-relative">
+            <h5 class="mb-1 fw-bold">${escapeHtml(item.name || '—')}</h5>
+            <small class="text-white-50">Bulk Distributor</small>
+          </div>
+          <div class="bdc-card-body p-3 position-relative">
+            <p class="mb-1"><i class="bi bi-telephone-fill me-2 text-muted"></i>
+              ${item.phone ? `<a href="tel:${escapeHtml(item.phone)}" class="text-decoration-none fw-semibold">${escapeHtml(item.phone)}</a>` : '—'}
+            </p>
+            <p class="mb-1"><i class="bi bi-geo-alt-fill me-2 text-muted"></i>${escapeHtml(item.location || '—')}</p>
+            <p class="mb-0"><i class="bi bi-person-badge me-2 text-muted"></i>${escapeHtml(item.rep_name || '—')}
+              ${item.rep_phone ? ` · <a class="text-decoration-none" href="tel:${escapeHtml(item.rep_phone)}">${escapeHtml(item.rep_phone)}</a>` : ''}
+            </p>
+          </div>
+          <div class="bdc-card-footer d-flex justify-content-between align-items-center p-3">
+            <a class="btn btn-sm btn-outline-secondary" href="${profileUrl}">View</a>
+            <button class="btn btn-sm btn-primary edit-bdc-btn" data-bdc-id="${item.id}">
+              <i class="bi bi-pencil-square me-1"></i>Edit
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderList() {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const pageItems = filtered.slice(start, start + PAGE_SIZE);
+    $list.innerHTML = pageItems.length
+      ? pageItems.map(buildCard).join('')
+      : `<div class="col-12"><div class="text-center text-muted py-5">No BDCs found.</div></div>`;
+    const total = filtered.length, first = total ? start + 1 : 0, last = Math.min(start + PAGE_SIZE, total);
+    const queryTxt = currentQuery ? ` for "<span class="fw-semibold">${escapeHtml(currentQuery)}</span>"` : '';
+    $summary.innerHTML = `Showing <strong>${first}</strong>–<strong>${last}</strong> of <strong>${total}</strong>${queryTxt}.`;
+    attachEditHandlers(); // re-bind edit buttons after render
+  }
+
+  function renderPager() {
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const disabledPrev = currentPage === 1 ? ' disabled' : '';
+    const disabledNext = currentPage === totalPages ? ' disabled' : '';
+    const windowSize = 5, half = Math.floor(windowSize / 2);
+    let start = Math.max(1, currentPage - half);
+    let end = Math.min(totalPages, start + windowSize - 1);
+    start = Math.max(1, Math.min(start, end - windowSize + 1));
+    let pagesHtml = '';
+    for (let p = start; p <= end; p++) {
+      pagesHtml += `<li class="page-item${p === currentPage ? ' active' : ''}">
+          <button class="page-link" data-page="${p}" aria-label="Go to page ${p}">${p}</button></li>`;
+    }
+    $pager.innerHTML = `
+      <li class="page-item${disabledPrev}"><button class="page-link" data-page="prev" aria-label="Previous">«</button></li>
+      ${start > 1 ? `<li class="page-item"><button class="page-link" data-page="1">1</button></li><li class="page-item disabled"><span class="page-link">…</span></li>` : ''}
+      ${pagesHtml}
+      ${end < totalPages ? `<li class="page-item disabled"><span class="page-link">…</span></li><li class="page-item"><button class="page-link" data-page="${totalPages}">${totalPages}</button></li>` : ''}
+      <li class="page-item${disabledNext}"><button class="page-link" data-page="next" aria-label="Next">»</button></li>`;
+  }
+
+  function render() { renderList(); renderPager(); }
+
+  function applySearch() {
+    const q = (currentQuery || '').trim().toLowerCase();
+    if (!q) filtered = [...bdcsData];
+    else {
+      filtered = bdcsData.filter(x =>
+        [x.name, x.phone, x.location, x.rep_name, x.rep_phone]
+          .filter(Boolean)
+          .some(f => String(f).toLowerCase().includes(q))
+      );
+    }
+    currentPage = 1; render();
+  }
+
+  // Pagination clicks
+  document.getElementById('bdc-pagination').addEventListener('click', (e) => {
+    const btn = e.target.closest('button.page-link'); if (!btn) return;
+    const val = btn.getAttribute('data-page');
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    if (val === 'prev' && currentPage > 1) currentPage--;
+    else if (val === 'next' && currentPage < totalPages) currentPage++;
+    else {
+      const num = parseInt(val, 10);
+      if (!isNaN(num)) currentPage = num;
+    }
+    render(); window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  // Search controls
+  document.getElementById('bdc-search-btn').addEventListener('click', () => { currentQuery = $q.value; applySearch(); });
+  document.getElementById('bdc-clear-btn').addEventListener('click', () => { $q.value=''; currentQuery=''; applySearch(); });
+  $q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { currentQuery = $q.value; applySearch(); } });
+
+  // ===== Create BDC =====
+  function addBDC() {
+    const name = document.getElementById('bdc-name').value.trim();
+    const phone = document.getElementById('bdc-phone').value.trim();
+    const location = document.getElementById('bdc-location').value.trim();
+    const rep_name = document.getElementById('bdc-rep-name').value.trim();
+    const rep_phone = document.getElementById('bdc-rep-phone').value.trim();
+    if (!name || !phone || !location || !rep_name || !rep_phone) {
+      return alert('Please fill in all fields including Representative Name and Phone.');
+    }
+    fetch('/bdc/add', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, phone, location, rep_name, rep_phone })
+    })
+    .then(r => r.json()).then(data => {
+      if (data.status === 'success') {
+        new bootstrap.Modal(document.getElementById('bdcSuccessModal')).show();
+        ['bdc-name','bdc-phone','bdc-location','bdc-rep-name','bdc-rep-phone'].forEach(id => document.getElementById(id).value='');
+      } else { alert(data.message || 'Failed to add BDC'); }
+    })
+    .catch(err => { console.error(err); alert("❌ Something went wrong. Please try again."); });
+  }
+
+  // ===== Edit BDC (modal) =====
+  const editModalEl = document.getElementById('editBDCModal');
+  const editModal = new bootstrap.Modal(editModalEl);
+  function attachEditHandlers() {
+    document.querySelectorAll('.edit-bdc-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.bdcId;
+        const row = bdcsData.find(x => x.id === id);
+        if (!row) return;
+        document.getElementById('edit-bdc-id').value = row.id;
+        document.getElementById('edit-bdc-name').value = row.name || '';
+        document.getElementById('edit-bdc-location').value = row.location || '';
+        document.getElementById('edit-bdc-phone').value = row.phone || '';
+        document.getElementById('edit-bdc-rep-name').value = row.rep_name || '';
+        document.getElementById('edit-bdc-rep-phone').value = row.rep_phone || '';
+        editModal.show();
+      });
+    });
+  }
+
+  document.getElementById('save-bdc-btn').addEventListener('click', () => {
+    const id = document.getElementById('edit-bdc-id').value;
+    const payload = {
+      name: document.getElementById('edit-bdc-name').value.trim(),
+      location: document.getElementById('edit-bdc-location').value.trim(),
+      phone: document.getElementById('edit-bdc-phone').value.trim(),
+      rep_name: document.getElementById('edit-bdc-rep-name').value.trim(),
+      rep_phone: document.getElementById('edit-bdc-rep-phone').value.trim()
+    };
+    // remove empty to allow partial updates
+    Object.keys(payload).forEach(k => { if (!payload[k]) delete payload[k]; });
+
+    const spinner = document.getElementById('save-bdc-spinner');
+    spinner.classList.remove('d-none');
+
+    fetch(`/bdc/update/${id}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+      spinner.classList.add('d-none');
+      if (data.status === 'success') {
+        // Update local copy + re-render
+        const idx = bdcsData.findIndex(x => x.id === id);
+        if (idx >= 0) {
+          bdcsData[idx] = { ...bdcsData[idx], ...payload };
+          applySearch();
+        }
+        editModal.hide();
+      } else {
+        alert(data.message || 'Update failed');
+      }
+    })
+    .catch(err => {
+      spinner.classList.add('d-none');
+      console.error(err);
+      alert('❌ Unable to save changes.');
+    });
+  });
+
+  // Initial render
+  render();
+</script>
