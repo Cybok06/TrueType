@@ -20,6 +20,10 @@
     .hint { color:#475569; }
     .chip { background:#eef2ff; color:#3b82f6; border-radius:999px; padding:.25rem .6rem; font-size:.8rem; }
     .divider { height:1px; background:#e9ecef; margin: 1rem 0; }
+    .section-muted { background:#f8fafc; border:1px solid #e9ecef; border-radius:10px; padding:12px; }
+    .counter { font-variant-numeric: tabular-nums; }
+    .sticky-actions { position: sticky; bottom: 0; background:white; padding-top: 12px; }
+    .kbd { background:#0b1320; color:white; border-radius:6px; padding:0 .45rem; font-size:.8rem; }
   </style>
 </head>
 <body>
@@ -42,30 +46,92 @@
       <div class="card">
         <div class="card-body p-4 p-sm-5">
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-            <h4 class="mb-0">Create BDC Share Link</h4>
-            <small class="text-muted">Partner will only see deliveries for the chosen BDC</small>
+            <h4 class="mb-0">Create Share Link</h4>
+            <small class="text-muted">Scope the shared page by <strong>Multiple BDCs</strong> or a single <strong>OMC</strong>.</small>
           </div>
 
           {% if error %}
             <div class="alert alert-danger py-2 mb-3">{{ error }}</div>
           {% endif %}
 
-          <form method="post" action="{{ url_for('shared_links.new_share_link_form') }}" autocomplete="off" novalidate>
-            <!-- BDC -->
+          <form method="post" action="{{ url_for('shared_links.new_share_link_form') }}" autocomplete="off" novalidate id="shareForm">
+            <!-- MODE -->
             <div class="mb-3">
-              <label class="form-label fw-semibold">BDC</label>
+              <label class="form-label fw-semibold d-block">Scope Mode</label>
+              <div class="section-muted">
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="mode" id="modeBdc" value="bdc_multi" checked>
+                  <label class="form-check-label" for="modeBdc">Multiple BDCs</label>
+                </div>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="mode" id="modeOmc" value="omc">
+                  <label class="form-check-label" for="modeOmc">Single OMC</label>
+                </div>
+                <div class="form-text mt-2">
+                  Partners will only see and update orders inside this chosen scope.
+                </div>
+              </div>
+            </div>
+
+            <!-- BDC MULTI SECTION -->
+            <div id="bdcSection">
+              <div class="mb-2 d-flex justify-content-between align-items-center">
+                <label class="form-label fw-semibold mb-0">Select BDC(s)</label>
+                <small class="text-muted">
+                  Selected: <span id="bdcCount" class="counter">0</span>
+                </small>
+              </div>
+
               {% if bdc_names and bdc_names|length > 0 %}
-                <select name="bdc_name" class="form-select" required>
-                  <option value="">Select BDC…</option>
-                  {% for n in bdc_names %}
+                <div class="row g-3">
+                  <div class="col-12">
+                    <select name="bdc_names" id="bdcNames" class="form-select" multiple size="8" aria-label="Select one or more BDCs">
+                      {% for n in bdc_names %}
+                        <option value="{{ n }}">{{ n }}</option>
+                      {% endfor %}
+                    </select>
+                    <div class="d-flex gap-2 mt-2">
+                      <button class="btn btn-sm btn-outline-secondary" type="button" id="btnSelectAll">Select all</button>
+                      <button class="btn btn-sm btn-outline-secondary" type="button" id="btnClearAll">Clear</button>
+                    </div>
+                    <div class="form-text mt-2">
+                      Hold <span class="kbd">Ctrl</span>/<span class="kbd">Cmd</span> to select multiple. You can also paste a CSV below.
+                    </div>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label mb-1">Or paste BDC names (CSV)</label>
+                    <input type="text" name="bdc_names_csv" id="bdcCsv" class="form-control" placeholder="e.g. BDC One, BDC Two, BDC Three">
+                    <div class="form-text">We’ll merge CSV with the selection above (deduplicated).</div>
+                  </div>
+                </div>
+              {% else %}
+                <input type="text" name="bdc_names_csv" class="form-control" placeholder="Enter one or more BDC names (CSV)" required>
+                <div class="form-text">No BDC list found; provide names as CSV.</div>
+              {% endif %}
+            </div>
+
+            <!-- OMC SINGLE SECTION -->
+            <div id="omcSection" class="d-none">
+              <div class="mb-2">
+                <label class="form-label fw-semibold">Select OMC</label>
+              </div>
+
+              {% if omc_names and omc_names|length > 0 %}
+                <select name="omc_name" id="omcName" class="form-select" aria-label="Select OMC">
+                  <option value="">Select OMC…</option>
+                  {% for n in omc_names %}
                     <option value="{{ n }}">{{ n }}</option>
                   {% endfor %}
                 </select>
+                <div class="form-text">All approved orders with this OMC will be visible.</div>
               {% else %}
-                <input type="text" name="bdc_name" class="form-control" placeholder="Enter BDC name" required>
+                <input type="text" name="omc_name" id="omcNameText" class="form-control" placeholder="Enter OMC name" />
+                <div class="form-text">No OMC list found; provide name manually.</div>
               {% endif %}
-              <div class="form-text">The shared page will be locked to this BDC only.</div>
             </div>
+
+            <div class="divider"></div>
 
             <!-- Passcode -->
             <div class="mb-3">
@@ -88,8 +154,8 @@
                 </button>
               </div>
               <div class="d-flex justify-content-between">
-                <div id="passHelp" class="form-text">The partner must enter this to unlock the page.</div>
-                <small id="passCount" class="form-text">0 / 5</small>
+                <div id="passHelp" class="form-text">Partner must enter this to unlock the page.</div>
+                <small id="passCount" class="form-text counter">0 / 5</small>
               </div>
             </div>
 
@@ -100,18 +166,18 @@
               <div class="form-text">After expiry, the link becomes invalid automatically.</div>
             </div>
 
-            <div class="divider"></div>
-
-            <div class="row g-3 align-items-center">
-              <div class="col-12 col-sm">
-                <div class="hint small">
-                  <strong>Security:</strong> the passcode is stored as a secure hash; the URL is a random token; you can revoke the link at any time.
+            <div class="sticky-actions">
+              <div class="row g-3 align-items-center">
+                <div class="col-12 col-sm">
+                  <div class="hint small">
+                    <strong>Security:</strong> passcode is stored as a secure hash; the URL is a random token; you can revoke the link at any time.
+                  </div>
                 </div>
-              </div>
-              <div class="col-12 col-sm-auto">
-                <button type="submit" class="btn btn-primary w-100">
-                  Generate Link
-                </button>
+                <div class="col-12 col-sm-auto">
+                  <button type="submit" class="btn btn-primary w-100">
+                    Generate Link
+                  </button>
+                </div>
               </div>
             </div>
           </form>
@@ -129,7 +195,54 @@
 <!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-  // Passcode: numeric-only guard + counter + show/hide
+  // --- Elements
+  const modeBdc = document.getElementById('modeBdc');
+  const modeOmc = document.getElementById('modeOmc');
+  const bdcSection = document.getElementById('bdcSection');
+  const omcSection = document.getElementById('omcSection');
+  const form = document.getElementById('shareForm');
+
+  // Optional multi-select elements (exist if list provided)
+  const bdcNames = document.getElementById('bdcNames');
+  const bdcCount = document.getElementById('bdcCount');
+  const bdcCsv   = document.getElementById('bdcCsv');
+  const btnSelectAll = document.getElementById('btnSelectAll');
+  const btnClearAll  = document.getElementById('btnClearAll');
+
+  // --- Mode toggle
+  function setModeUI() {
+    const useBdc = modeBdc.checked;
+    bdcSection.classList.toggle('d-none', !useBdc);
+    omcSection.classList.toggle('d-none', useBdc);
+  }
+  modeBdc.addEventListener('change', setModeUI);
+  modeOmc.addEventListener('change', setModeUI);
+  setModeUI();
+
+  // --- BDC selection helpers
+  function updateBdcCount() {
+    if (!bdcNames || !bdcCount) return;
+    const sel = Array.from(bdcNames.options).filter(o => o.selected).length;
+    bdcCount.textContent = sel;
+  }
+  if (bdcNames) {
+    bdcNames.addEventListener('change', updateBdcCount);
+    updateBdcCount();
+  }
+  if (btnSelectAll && bdcNames) {
+    btnSelectAll.addEventListener('click', () => {
+      Array.from(bdcNames.options).forEach(o => o.selected = true);
+      updateBdcCount();
+    });
+  }
+  if (btnClearAll && bdcNames) {
+    btnClearAll.addEventListener('click', () => {
+      Array.from(bdcNames.options).forEach(o => o.selected = false);
+      updateBdcCount();
+    });
+  }
+
+  // --- Passcode: numeric-only guard + counter + show/hide
   (function () {
     const input = document.getElementById('passcode');
     const count = document.getElementById('passCount');
@@ -139,7 +252,6 @@
       count.textContent = (input.value || '').length + ' / 5';
     }
     input.addEventListener('input', () => {
-      // keep only digits, max 5
       input.value = (input.value.replace(/\D/g, '')).slice(0, 5);
       updateCount();
     });
@@ -151,6 +263,36 @@
       toggle.textContent = (t === 'password') ? 'Show' : 'Hide';
     });
   })();
+
+  // --- Client-side guard before submit
+  form.addEventListener('submit', (e) => {
+    const mode = modeBdc.checked ? 'bdc_multi' : 'omc';
+
+    if (mode === 'bdc_multi') {
+      const selected = bdcNames ? Array.from(bdcNames.options).filter(o => o.selected).map(o => o.value.trim()).filter(Boolean) : [];
+      const csv = (bdcCsv ? bdcCsv.value : '').split(',').map(s => s.trim()).filter(Boolean);
+      const merged = Array.from(new Set([...selected, ...csv]));
+      if (merged.length === 0) {
+        e.preventDefault();
+        alert('Select at least one BDC or provide CSV.');
+        return;
+      }
+      // Ensure selected options remain selected for POST (in case of CSV only)
+      if (bdcNames && merged.length && selected.length === 0) {
+        Array.from(bdcNames.options).forEach(o => { o.selected = merged.includes(o.value); });
+      }
+    } else {
+      // OMC
+      const omcSel = document.getElementById('omcName');
+      const omcTxt = document.getElementById('omcNameText');
+      const val = omcSel ? omcSel.value.trim() : (omcTxt ? omcTxt.value.trim() : '');
+      if (!val) {
+        e.preventDefault();
+        alert('Select or enter an OMC name.');
+        return;
+      }
+    }
+  });
 </script>
 </body>
 </html>
