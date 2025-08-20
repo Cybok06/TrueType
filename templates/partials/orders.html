@@ -352,37 +352,37 @@
 
   // Build message text from the modal + form (NO footer, NO returns/amounts)
   function buildMessage($form, includeDepot=false){
-    const id = $form.data('id');
-    const $modal = $(`#detailsModal${id}`);
+  const id = $form.data('id');
+  const $modal = $(`#detailsModal${id}`);
 
-    // Prefer modal data (reflects what's shown in “View Details”)
-    const product = $modal.data('product') || $form.data('product') || '';
-    const vehicle = $modal.data('vehicle') || $form.data('vehicle') || '';
-    const driver  = $modal.data('driver')  || $form.data('driver')  || '';
-    const dphone  = $modal.data('driverphone') || $form.data('driverphone') || '';
-    const qty     = $modal.data('quantity') || $form.data('qty') || '';
-    const region  = $modal.data('region') || $form.data('region') || '';
-    const depot   = $form.find('.depot_input').val() || $modal.data('depot') || '';
+  // Prefer modal data (reflects what's shown in “View Details”)
+  const product = $modal.data('product') || $form.data('product') || '';
+  const vehicle = $modal.data('vehicle') || $form.data('vehicle') || '';
+  const driver  = $modal.data('driver')  || $form.data('driver')  || '';
+  const dphone  = $modal.data('driverphone') || $form.data('driverphone') || '';
+  const qty     = $modal.data('quantity') || $form.data('qty') || '';
+  const region  = $modal.data('region') || $form.data('region') || '';
+  const depot   = $form.find('.depot_input').val() || $modal.data('depot') || '';
 
-    const client  = $form.data('client') || 'Client';
-    const clientId= $form.data('clientid') || '';
+  const client  = $form.data('client') || 'Client';
+  const clientId= $form.data('clientid') || '';
 
-    const due     = ($form.find('input[name="due_date"]').val() || '').trim();
+  let lines = [
+    `ORDER DETAILS`,
+    `Client: ${client} (${clientId})`,
+    `Product: ${product}`,
+    `Quantity: ${qty} L`,
+    `Region: ${region}`,
+    `Vehicle: ${vehicle}`,
+    `Driver: ${driver}${dphone ? ' ('+dphone+')' : ''}`
+  ];
 
-    let lines = [
-      `ORDER DETAILS`,
-      `Client: ${client} (${clientId})`,
-      `Product: ${product}`,
-      `Quantity: ${qty} L`,
-      `Region: ${region}`,
-      `Vehicle: ${vehicle}`,
-      `Driver: ${driver}${dphone ? ' ('+dphone+')' : ''}`
-    ];
-    if(includeDepot){ lines.push(`Depot: ${depot}`); }
-    if(due){ lines.push(`Due Date: ${due}`); }
-
-    return lines.join('\n');
+  if(includeDepot){ 
+    lines.push(`Depot: ${depot}`); 
   }
+
+  return lines.join('\n');
+}
 
   // Enable/disable BDC select
   function setBDCState($form, disabled){
