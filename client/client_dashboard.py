@@ -17,7 +17,7 @@ def _f(x, default=0.0):
 
 @client_dashboard_bp.route('/dashboard')
 def dashboard():
-    if 'client_id' not in session or 'client_name' not in session:
+    if 'client_id' not in session:
         flash("Please log in first", "warning")
         return redirect(url_for('login.login'))
 
@@ -28,30 +28,30 @@ def dashboard():
 
     oid = ObjectId(client_id)
 
+    # ✅ Fetch client and name
     client = clients_collection.find_one({"_id": oid})
     if not client:
         flash("Client not found. Please contact support.", "danger")
         return redirect(url_for('login.login'))
+
+    client_name = client.get("name", "Client")   # <-- get name here
 
     # Fetch orders for this client (support both ObjectId and string storage on orders)
     orders = list(
         orders_collection.find({"client_id": {"$in": [oid, client_id]}}).sort("date", -1)
     )
 
-    # Build list of order ObjectIds for payments lookup
     order_ids_obj = [o["_id"] for o in orders]
 
-    # ---- Payments: confirmed only, for this client and these orders ----
     payments_pipe = [
         {
             "$match": {
                 "status": {"$regex": "^confirmed$", "$options": "i"},
-                "client_id": oid,                     # payments saved with ObjectId client_id
-                "order_id": {"$in": order_ids_obj}    # payments saved with ObjectId order_id
+                "client_id": oid,
+                "order_id": {"$in": order_ids_obj}
             }
         },
         {
-            # Be robust if amount was stored as string in some records
             "$addFields": {
                 "amount_num": {
                     "$convert": {"input": "$amount", "to": "double", "onError": 0, "onNull": 0}
@@ -66,26 +66,21 @@ def dashboard():
         }
     ]
 
-    # Map: order_id(ObjectId) -> total_paid
     paid_map = {row["_id"]: _f(row.get("total_paid")) for row in payments_collection.aggregate(payments_pipe)}
 
-    # ---- Compute per-order figures & overall totals ----
     total_orders = len(orders)
     total_debt   = 0.0
     total_paid   = 0.0
 
     for o in orders:
-        # Coerce numeric
         o["total_debt"] = _f(o.get("total_debt"))
         total_debt += o["total_debt"]
 
-        # Amount paid ONLY from payments collection (no embedded/legacy sums)
-        paid_external = _f(paid_map.get(o["_id"]))  # defaults to 0.0 when missing
+        paid_external = _f(paid_map.get(o["_id"]))
         o["amount_paid"] = round(paid_external, 2)
         o["amount_left"] = round(o["total_debt"] - o["amount_paid"], 2)
         total_paid += o["amount_paid"]
 
-        # Normalize Mongo extended JSON dates if present
         for field in ("date", "due_date", "delivered_date"):
             v = o.get(field)
             if isinstance(v, dict) and "$date" in v:
@@ -101,10 +96,11 @@ def dashboard():
     return render_template(
         'client/client_dashboard.html',
         client=client,
+        client_name=client_name,             # ✅ pass name into template
         total_orders=total_orders,
         total_debt=round(total_debt, 2),
-        total_paid=round(total_paid, 2),     # ✅ only from payments collection
+        total_paid=round(total_paid, 2),
         amount_left=amount_left,
         latest_order=latest_order,
-        recent_orders=orders[:5]             # each has .amount_paid filled (payments-only)
+        recent_orders=orders[:5]
     )
