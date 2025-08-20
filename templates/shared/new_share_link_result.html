@@ -20,6 +20,8 @@
     .chip { background:#eef2ff; color:#3b82f6; border-radius:999px; padding:.25rem .6rem; font-size:.8rem; }
     .copy-group .form-control { background:#fff; }
     .btn-icon { display:inline-flex; align-items:center; gap:.5rem; }
+    .scope-pill { background:#0b1320; color:#fff; border-radius:999px; padding:.2rem .5rem; font-size:.8rem; }
+    .note { font-size:.925rem; }
   </style>
 </head>
 <body>
@@ -48,8 +50,11 @@
 
           <div class="row g-3 mb-3">
             <div class="col-12 col-md-4">
-              <div class="small muted">BDC</div>
-              <div class="fs-6 fw-semibold">{{ bdc_name }}</div>
+              <div class="small muted">Scope</div>
+              <!-- bdc_name is a friendly scope label (e.g., "OMC: Total", "3 BDCs", or "BCD One") -->
+              <div class="fs-6 fw-semibold">
+                <span class="scope-pill" title="Scope label">{{ bdc_name }}</span>
+              </div>
             </div>
             <div class="col-12 col-md-4">
               <div class="small muted">Passcode</div>
@@ -73,14 +78,16 @@
               <input id="shareUrl" type="text" class="form-control" value="{{ shared_url }}" readonly>
               <button class="btn btn-outline-primary btn-icon" type="button" id="copyUrl">Copy URL</button>
             </div>
-            <div class="form-text">Anyone with this link can unlock with the passcode and update only <strong>{{ bdc_name }}</strong> deliveries.</div>
+            <div class="form-text note">
+              Anyone with this link can unlock with the passcode and update deliveries within: <strong>{{ bdc_name }}</strong>.
+            </div>
           </div>
 
           <!-- Actions -->
           <div class="d-flex flex-wrap gap-2">
-            <a href="{{ shared_url }}" class="btn btn-success btn-icon" target="_blank">Open Shared Page</a>
+            <a href="{{ shared_url }}" class="btn btn-success btn-icon" target="_blank" rel="noopener">Open Shared Page</a>
 
-            <!-- Revoke: expects 'token' is provided by the backend when rendering this page -->
+            <!-- Revoke: expects 'token' provided by backend -->
             <form method="post" action="{{ url_for('shared_links.revoke_share_link', token=token) }}"
                   onsubmit="return confirm('Revoke this link? This cannot be undone.');">
               <button type="submit" class="btn btn-outline-danger btn-icon">Revoke Link</button>
@@ -126,34 +133,44 @@
     new bootstrap.Toast(toastEl, { delay: 2200 }).show();
   }
 
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (_) {}
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch(_) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
   // Copy URL
-  document.getElementById('copyUrl').addEventListener('click', () => {
-    const el = document.getElementById('shareUrl');
-    el.select(); el.setSelectionRange(0, 99999);
-    const ok = document.execCommand('copy');
+  document.getElementById('copyUrl').addEventListener('click', async () => {
+    const url = document.getElementById('shareUrl').value;
+    const ok = await copyText(url);
     showToast(ok ? 'URL copied to clipboard' : 'Copy failed', ok);
   });
 
   // Copy Passcode
-  document.getElementById('copyPass').addEventListener('click', () => {
-    const temp = document.createElement('input');
-    temp.value = '{{ passcode }}';
-    document.body.appendChild(temp);
-    temp.select(); temp.setSelectionRange(0, 99999);
-    const ok = document.execCommand('copy');
-    document.body.removeChild(temp);
+  document.getElementById('copyPass').addEventListener('click', async () => {
+    const ok = await copyText('{{ passcode }}');
     showToast(ok ? 'Passcode copied' : 'Copy failed', ok);
   });
 
   // Copy both URL + Passcode (formatted)
-  document.getElementById('copyBoth').addEventListener('click', () => {
-    const text = `BDC: {{ bdc_name }}\nURL: {{ shared_url }}\nPasscode: {{ passcode }}\nExpires: {{ expires_at.strftime('%Y-%m-%d %H:%M UTC') }}`;
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select(); ta.setSelectionRange(0, 99999);
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
+  document.getElementById('copyBoth').addEventListener('click', async () => {
+    const text = `Scope: {{ bdc_name }}\nURL: {{ shared_url }}\nPasscode: {{ passcode }}\nExpires: {{ expires_at.strftime('%Y-%m-%d %H:%M UTC') }}`;
+    const ok = await copyText(text);
     showToast(ok ? 'URL + Passcode copied' : 'Copy failed', ok);
   });
 </script>
