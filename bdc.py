@@ -302,3 +302,4 @@ def update_bank_status(payment_id):
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+    
