@@ -232,7 +232,7 @@
               <td>{{ r.payment_date_str }}</td>
               <td>{{ r.bdc or '—' }}</td>
               <td>{{ r.ptype or '—' }}</td>
-              <td class="text-end bank-bdc-amt">{{ '%.2f'|format(r.amount) }}</td>
+<td class="text-end bank-bdc-amt" data-num="{{ '%.2f'|format(r.amount) }}">{{ '%.2f'|format(r.amount) }}</td>
               <td>{{ r.reference or '—' }}</td>
               <td>{{ r.paid_by or '—' }}</td>
             </tr>
@@ -642,6 +642,12 @@
     loadBdcDebts();
     updateCurrentBalance();
   })();
+  // Format BDC payment history numbers
+document.querySelectorAll('#bankBdcTable tbody td.bank-bdc-amt').forEach(td=>{
+  const raw = parseFloat((td.getAttribute('data-num')||td.textContent).replace(/,/g,''));
+  if(!isNaN(raw)) td.textContent = fmt2(raw);
+});
+
 </script>
 </body>
 </html>
