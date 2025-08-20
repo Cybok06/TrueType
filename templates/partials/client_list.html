@@ -9,163 +9,42 @@
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
- <style>
-  body {
-    background: linear-gradient(to bottom right, #f9fdfb, #e6f0ff);
-    font-family: 'Segoe UI', sans-serif;
-    min-height: 100vh;
-  }
-
-  h3 {
-    font-weight: bold;
-    color: #1e90ff;
-  }
-
-  .search-box input {
-    border: 2px solid #1e90ff;
-    border-radius: 8px;
-    padding: 10px;
-  }
-
-  .client-card .card {
-    background-color: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 15px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-    height: 100%;
-    padding: 1rem;
-    text-align: center;
-  }
-
-  .client-card .card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-  }
-
-  .client-img {
-    width: 75px;
-    height: 75px;
-    object-fit: cover;
-    border-radius: 50%;
-    margin-bottom: 10px;
-    border: 2px solid #28a745;
-  }
-
-  .card-title {
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: #333;
-  }
-
-  .card p {
-    margin: 0.25rem 0;
-    font-size: 0.95rem;
-    word-break: break-word;
-  }
-
-  .badge-active {
-    background-color: #28a745 !important;
-    color: white;
-  }
-
-  .badge-inactive {
-    background-color: #ffc107 !important;
-    color: black;
-  }
-
-  .badge-blocked {
-    background-color: #dc3545 !important;
-    color: white;
-  }
-
-  .btn-primary {
-    background-color: #1e90ff;
-    border: none;
-  }
-
-  .btn-primary:hover {
-    background-color: #0d6efd;
-  }
-
-  .btn-success {
-    background-color: #28a745;
-  }
-
-  .btn-success:hover {
-    background-color: #218838;
-  }
-
-  .btn-outline-warning:hover {
-    background-color: #ffc107;
-    color: #000;
-  }
-
-  .btn-outline-danger:hover {
-    background-color: #dc3545;
-    color: #fff;
-  }
-
-  button.btn-sm {
-    font-weight: 600;
-    border-radius: 8px;
-    padding: 6px 12px;
-  }
-
-  .modal-header {
-    border-top-left-radius: 10px;
-    border-top-right-radius: 10px;
-  }
-
-  .modal-title {
-    font-weight: 600;
-  }
-
-  .modal-content {
-    border-radius: 12px;
-  }
-
-  @media (max-width: 575px) {
-    .btn-sm {
-      width: 100%;
+  <style>
+    body {
+      background: linear-gradient(to bottom right, #f9fdfb, #e6f0ff);
+      font-family: 'Segoe UI', sans-serif;
+      min-height: 100vh;
     }
+    h3 { font-weight: bold; color: #1e90ff; }
+    .search-box input { border: 2px solid #1e90ff; border-radius: 8px; padding: 10px; }
 
-    .d-flex.flex-wrap {
-      flex-direction: column !important;
-      align-items: stretch !important;
+    .client-card .card {
+      background-color: #fff; border: 1px solid #e0e0e0; border-radius: 15px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      height: 100%; padding: 1rem; text-align: center;
     }
+    .client-card .card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.12); }
 
-    .search-box {
-      width: 100%;
+    .client-img { width: 75px; height: 75px; object-fit: cover; border-radius: 50%; margin-bottom: 10px; border: 2px solid #1e90ff; }
+
+    .badge-active { background-color: #28a745 !important; color: #fff; }
+    .badge-inactive { background-color: #ffc107 !important; color: #000; }
+    .badge-blocked { background-color: #dc3545 !important; color: #fff; }
+
+    .btn-primary { background-color: #1e90ff; border: none; }
+    .btn-primary:hover { background-color: #0d6efd; }
+    .btn-success { background-color: #28a745; }
+    .btn-success:hover { background-color: #218838; }
+
+    button.btn-sm { font-weight: 600; border-radius: 8px; padding: 6px 12px; }
+
+    @media (max-width: 575px) {
+      .btn-sm { width: 100%; }
+      .d-flex.flex-wrap { flex-direction: column !important; align-items: stretch !important; }
+      .search-box { width: 100%; }
     }
-  }
-  .client-card .card {
-  border-radius: 14px;
-  background-color: #fff;
-  transition: transform 0.2s ease;
-  min-height: 280px;
-}
-
-.client-card .card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.12);
-}
-
-.client-card img {
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-@media (max-width: 767px) {
-  .client-card .card {
-    min-height: auto;
-    padding: 1.2rem;
-  }
-}
-
-</style>
-
-
+  </style>
 </head>
 <body class="bg-light">
   <div class="container py-4">
@@ -189,42 +68,49 @@
 
     {% if clients %}
     <div class="row" id="clientCards">
-     <!-- Paste this where the client card is rendered -->
-{% for client in clients %}
-<div class="col-xl-4 col-md-6 col-sm-12 mb-4 client-card"
-     data-client="{{ client.name|lower }} {{ client.phone }} {{ client.client_id }}"
-     data-status="{{ client.status }}"
-     data-client-id="{{ client._id }}">
-  <div class="card shadow-sm border-0 h-100 p-3 text-center" style="cursor: pointer;"
-       onclick="window.open('/client/{{ client._id }}', '_blank')">
-    <img src="{{ client.image_url or 'https://cdn-icons-png.flaticon.com/256/3135/3135715.png' }}"
-         alt="Profile"
-         class="mx-auto rounded-circle mb-3"
-         style="width: 60px; height: 60px; object-fit: cover; border: 2px solid #1e90ff;">
-    <h6 class="fw-bold mb-0">{{ client.name }}</h6>
-    {% if client.location %}
-    <small class="text-muted d-block mb-1">{{ client.location }}</small>
-    {% endif %}
-    <small class="text-muted d-block mb-1"><strong>ID:</strong> {{ client.client_id }}</small>
-    <small class="text-muted d-block mb-1"><strong>Phone:</strong> {{ client.phone }}</small>
-    <small class="text-muted d-block mb-2">
-      <strong>Status:</strong>
-      <span class="badge
-        {% if client.status == 'active' %}badge-active
-        {% elif client.status == 'inactive' %}badge-inactive
-        {% else %}badge-blocked{% endif %} client-status">
-        {{ client.status|capitalize }}
-      </span>
-    </small>
-    <button class="btn btn-primary btn-sm w-100"
-            onclick="event.stopPropagation(); window.open('/client/{{ client._id }}', '_blank')">
-      See Details
-    </button>
-  </div>
-</div>
+      {% for client in clients %}
+      <div class="col-xl-4 col-md-6 col-sm-12 mb-4 client-card"
+           data-client="{{ client.name|lower }} {{ client.phone }} {{ client.client_id }} {{ client.location|lower if client.location else '' }}"
+           data-status="{{ client.status }}"
+           data-client-id="{{ client._id }}">
+        <div class="card shadow-sm border-0 h-100 p-3 text-center">
+          <img src="{{ client.image_url or 'https://cdn-icons-png.flaticon.com/256/3135/3135715.png' }}"
+               alt="Profile" class="mx-auto client-img rounded-circle mb-2">
+          <h6 class="fw-bold mb-0 client-name">{{ client.name }}</h6>
 
-{% endfor %}
+          <small class="text-muted d-block mb-1 client-location">{{ client.location or '—' }}</small>
 
+          <small class="text-muted d-block mb-1">
+            <strong>ID:</strong> <span class="client-id">{{ client.client_id }}</span>
+          </small>
+
+          <small class="text-muted d-block mb-1">
+            <strong>Phone:</strong> <span class="client-phone">{{ client.phone }}</span>
+          </small>
+
+          <!-- Optional: include if you have it in your DB/context
+          <small class="text-muted d-block mb-1">
+            <strong>Registered:</strong> <span class="client-date">{{ client.date_created or '' }}</span>
+          </small>
+          -->
+
+          <small class="text-muted d-block mb-2">
+            <strong>Status:</strong>
+            <span class="badge client-status
+              {% if client.status == 'active' %}badge-active
+              {% elif client.status == 'inactive' %}badge-inactive
+              {% else %}badge-blocked{% endif %}">
+              {{ client.status|capitalize }}
+            </span>
+          </small>
+
+          <button class="btn btn-primary btn-sm w-100"
+                  onclick="window.open('/client/{{ client._id }}', '_blank')">
+            See Details
+          </button>
+        </div>
+      </div>
+      {% endfor %}
     </div>
     {% else %}
       <p class="text-muted">No clients found.</p>
@@ -276,124 +162,157 @@
     </div>
   </div>
 
- <script>
-  let clientToDelete = null;
+  <script>
+    let clientToDelete = null;
 
-  // Helper: Return only visible cards
-  function getVisibleClientCards() {
-    return Array.from(document.querySelectorAll('.client-card')).filter(card => card.offsetParent !== null);
-  }
+    // Helper: visible cards only (respect filters)
+    function getVisibleClientCards() {
+      return Array.from(document.querySelectorAll('.client-card')).filter(card => card.offsetParent !== null);
+    }
 
-  // Search filter
-  $('#searchInput').on('keyup', function () {
-    const value = $(this).val().toLowerCase();
-    $('#clientCards .client-card').each(function () {
-      const clientText = $(this).data('client');
-      $(this).toggle(clientText.includes(value));
+    // Search filter
+    $('#searchInput').on('keyup', function () {
+      const value = $(this).val().toLowerCase();
+      $('#clientCards .client-card').each(function () {
+        const clientText = $(this).data('client');
+        $(this).toggle(clientText.includes(value));
+      });
     });
-  });
 
-  // Status filter
-  $('#statusFilter').on('change', function () {
-    const selected = $(this).val();
-    $('#clientCards .client-card').each(function () {
-      const status = $(this).data('status');
-      $(this).toggle(!selected || status === selected);
+    // Status filter
+    $('#statusFilter').on('change', function () {
+      const selected = $(this).val();
+      $('#clientCards .client-card').each(function () {
+        const status = $(this).data('status');
+        $(this).toggle(!selected || status === selected);
+      });
     });
-  });
 
-  // Export to Excel
-  function exportClientsToExcel() {
-    const rows = [["Client ID", "Name", "Phone", "Status", "Date Registered"]];
-    getVisibleClientCards().forEach(card => {
-      rows.push([
-        card.querySelector('.client-id')?.innerText.trim(),
-        card.querySelector('h5')?.innerText.trim(),
-        card.querySelector('.client-phone')?.innerText.trim(),
-        card.querySelector('.client-status')?.innerText.trim(),
-        card.querySelector('.client-date')?.innerText.trim()
-      ]);
-    });
-    const csv = rows.map(e => e.join(",")).join("\n");
-    const link = document.createElement("a");
-    link.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
-    link.download = "client_list.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
+    // CSV cell escaper
+    function csvCell(val) {
+      val = (val ?? '').toString();
+      if (val.includes('"') || val.includes(',') || val.includes('\n')) {
+        return '"' + val.replace(/"/g, '""') + '"';
+      }
+      return val;
+    }
 
-  // Export to PDF
-  function exportClientsToPDF() {
-    const visibleCards = getVisibleClientCards();
-    const tableHTML = `
-      <h4>Registered Clients</h4>
-      <table border="1" cellspacing="0" cellpadding="8" width="100%">
-        <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Status</th><th>Registered</th></tr></thead>
-        <tbody>
-          ${visibleCards.map(card => `
+    // Export to Excel (CSV)
+    function exportClientsToExcel() {
+      const headers = ["ID","Name","Location","Phone","Status"];
+      const rows = [headers];
+
+      getVisibleClientCards().forEach(card => {
+        rows.push([
+          card.querySelector('.client-id')?.innerText.trim() || '—',
+          card.querySelector('.client-name')?.innerText.trim() || '—',
+          card.querySelector('.client-location')?.innerText.trim() || '—',
+          card.querySelector('.client-phone')?.innerText.trim() || '—',
+          card.querySelector('.client-status')?.innerText.trim() || '—',
+        ]);
+      });
+
+      const csv = rows.map(r => r.map(csvCell).join(",")).join("\n");
+      const link = document.createElement("a");
+      link.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+      link.download = "client_list.csv";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // Export to PDF
+    function exportClientsToPDF() {
+      const visibleCards = getVisibleClientCards();
+      const tableHTML = `
+        <h4 style="margin-bottom:10px;">Registered Clients</h4>
+        <table border="1" cellspacing="0" cellpadding="6" width="100%" style="border-collapse:collapse;font-size:12px;">
+          <thead style="background:#f2f2f2;">
             <tr>
-              <td>${card.querySelector('.client-id').innerText}</td>
-              <td>${card.querySelector('h5').innerText}</td>
-              <td>${card.querySelector('.client-phone').innerText}</td>
-              <td>${card.querySelector('.client-status').innerText}</td>
-              <td>${card.querySelector('.client-date').innerText}</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>`;
-    const hiddenDiv = document.createElement('div');
-    hiddenDiv.innerHTML = tableHTML;
-    document.body.appendChild(hiddenDiv);
-    html2pdf().from(hiddenDiv).set({
-      margin: 0.5,
-      filename: 'client_list.pdf',
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
-    }).save().then(() => document.body.removeChild(hiddenDiv));
-  }
+              <th align="left">ID</th>
+              <th align="left">Name</th>
+              <th align="left">Location</th>
+              <th align="left">Phone</th>
+              <th align="left">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              visibleCards.map(card => `
+                <tr>
+                  <td>${(card.querySelector('.client-id')?.innerText || '—')}</td>
+                  <td>${(card.querySelector('.client-name')?.innerText || '—')}</td>
+                  <td>${(card.querySelector('.client-location')?.innerText || '—')}</td>
+                  <td>${(card.querySelector('.client-phone')?.innerText || '—')}</td>
+                  <td>${(card.querySelector('.client-status')?.innerText || '—')}</td>
+                </tr>
+              `).join('')
+            }
+          </tbody>
+        </table>`;
 
-  // Confirm delete
-  function confirmDelete(clientId) {
-    clientToDelete = clientId;
-    new bootstrap.Modal(document.getElementById('deleteConfirmModal')).show();
-  }
+      const hiddenDiv = document.createElement('div');
+      hiddenDiv.innerHTML = tableHTML;
+      document.body.appendChild(hiddenDiv);
 
-  // Delete action
-  $('#confirmDeleteBtn').click(function () {
-    if (!clientToDelete) return;
-    $('#deletingSpinner').show();
-    $.post(`/clients/delete/${clientToDelete}`, function (res) {
-      $('#deletingSpinner').hide();
-      if (res.success) {
-        $(`[data-client-id="${clientToDelete}"]`).remove();
-        bootstrap.Modal.getInstance(document.getElementById('deleteConfirmModal')).hide();
-      } else {
-        alert('Error: ' + (res.error || 'Unable to delete.'));
-      }
+      html2pdf()
+        .from(hiddenDiv)
+        .set({
+          margin: 0.5,
+          filename: 'client_list.pdf',
+          html2canvas: { scale: 2 },
+          jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+        })
+        .save()
+        .then(() => document.body.removeChild(hiddenDiv));
+    }
+
+    // Confirm delete (open modal)
+    function confirmDelete(clientId) {
+      clientToDelete = clientId;
+      new bootstrap.Modal(document.getElementById('deleteConfirmModal')).show();
+    }
+
+    // Delete action
+    $('#confirmDeleteBtn').click(function () {
+      if (!clientToDelete) return;
+      $('#deletingSpinner').show();
+      $.post(`/clients/delete/${clientToDelete}`, function (res) {
+        $('#deletingSpinner').hide();
+        if (res.success) {
+          $(`[data-client-id="${clientToDelete}"]`).remove();
+          bootstrap.Modal.getInstance(document.getElementById('deleteConfirmModal')).hide();
+        } else {
+          alert('Error: ' + (res.error || 'Unable to delete.'));
+        }
+      });
     });
-  });
 
-  // Edit modal fill
-  function editClient(id, name, phone, status) {
-    $('#editClientId').val(id);
-    $('#editName').val(name);
-    $('#editPhone').val(phone);
-    $('#editStatus').val(status);
-    new bootstrap.Modal(document.getElementById('editClientModal')).show();
-  }
+    // Edit modal fill
+    function editClient(id, name, phone, status) {
+      $('#editClientId').val(id);
+      $('#editName').val(name);
+      $('#editPhone').val(phone);
+      $('#editStatus').val(status);
+      new bootstrap.Modal(document.getElementById('editClientModal')).show();
+    }
 
-  // Submit edited form
-  $('#editClientForm').on('submit', function (e) {
-    e.preventDefault();
-    $.post(`/clients/update`, $(this).serialize(), function (res) {
-      if (res.success) {
-        location.reload();
-      } else {
-        alert('Update failed: ' + (res.error || 'Unknown error.'));
-      }
+    // Submit edited form
+    $('#editClientForm').on('submit', function (e) {
+      e.preventDefault();
+      $.post(`/clients/update`, $(this).serialize(), function (res) {
+        if (res.success) {
+          location.reload();
+        } else {
+          alert('Update failed: ' + (res.error || 'Unknown error.'));
+        }
+      });
     });
-  });
-</script>
 
+    // 🧪 Example you mentioned:
+    // Osbert Agbaga | ACHIMOTA | ID: TT251640001 | Phone: 0261961164 | Status: Active
+    // With the markup above, this will export as:
+    // TT251640001, Osbert Agbaga, ACHIMOTA, 0261961164, Active
+  </script>
 </body>
 </html>
