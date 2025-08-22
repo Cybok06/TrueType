@@ -26,29 +26,44 @@
     .back-link i { margin-right: 6px; }
     .alert { font-size: .95rem; }
 
-    /* Price badges */
-    .price-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: .35rem;
-      font-weight: 600;
-      border: 1px solid #0d6efd;
-      background: #eef5ff;
-      color: #0b5ed7;
-      border-radius: 999px;
-      padding: .35rem .75rem;
-      white-space: nowrap;
+    /* Autocomplete dropdown */
+    .ac-wrap { position: relative; }
+    .ac-list {
+      position: absolute;
+      inset: auto 0 0 0;
+      transform: translateY(100%);
+      z-index: 1050;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-top: none;
+      border-radius: 0 0 .5rem .5rem;
+      box-shadow: 0 10px 20px rgba(0,0,0,.08);
+      max-height: 280px;
+      overflow: auto;
+      display: none;
     }
-    .price-pill.total {
-      background: #0d6efd;
-      color: #fff;
-      border-color: #0d6efd;
+    .ac-item {
+      padding: .55rem .75rem;
+      cursor: pointer;
+      display: flex;
+      gap: .5rem;
+      align-items: start;
     }
-    .price-badges {
-      display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+    .ac-item:hover, .ac-item.active {
+      background: #f1f5ff;
     }
+    .ac-title { font-weight: 600; }
+    .ac-meta { font-size: .85rem; color: #6b7280; }
+    .ac-empty, .ac-loading { padding: .65rem .75rem; color: #6b7280; }
+    .form-control.is-loading {
+      background-image: linear-gradient(90deg, #f2f4f8 0px, #eef2f7 40px, #f2f4f8 80px);
+      background-size: 200% 100%;
+      animation: pulse 1.2s infinite linear;
+    }
+    @keyframes pulse { to { background-position: -200% 0; } }
+
     @media (max-width: 575.98px){
-      .price-badges { margin-top: .5rem; }
+      .ac-list { max-height: 60vh; }
     }
   </style>
 </head>
@@ -76,43 +91,35 @@
       {% endif %}
     {% endwith %}
 
-    <form method="POST">
+    <form method="POST" autocomplete="off">
       <div class="row g-3">
-        <!-- Product + badges (S-Price, S-Tax, Total/L) -->
+
+        <!-- Product (names only; no prices shown) -->
         <div class="col-md-6">
-          <label class="form-label d-flex align-items-center justify-content-between flex-wrap">
-            <span>Product</span>
-            <span class="price-badges">
-              <span id="sPriceBadge" class="price-pill">
-                <i class="bi bi-tag"></i>
-                S-Price: GHS <span id="sPriceVal">0.00</span>
-              </span>
-              <span id="sTaxBadge" class="price-pill">
-                <i class="bi bi-receipt"></i>
-                S-Tax: GHS <span id="sTaxVal">0.00</span>
-              </span>
-              <span id="sTotalBadge" class="price-pill total">
-                <i class="bi bi-calculator"></i>
-                Total/L: GHS <span id="sTotalVal">0.00</span>
-              </span>
-            </span>
-          </label>
+          <label class="form-label">Product</label>
           <select class="form-select" name="product" id="productSelect" required>
             <option value="">Select Product</option>
             {% for product in products %}
-              <option
-                value="{{ product.name }}"
-                data-sprice="{{ '%.2f'|format(product.s_price or 0) }}"
-                data-pprice="{{ '%.2f'|format(product.p_price or 0) }}"
-                data-stax="{{ '%.2f'|format(product.s_tax   or 0) }}"
-                data-ptax="{{ '%.2f'|format(product.p_tax   or 0) }}"
-              >
+              <option value="{{ product.name }}">
                 {{ product.name }}{% if product.description %} - {{ product.description }}{% endif %}
               </option>
             {% endfor %}
           </select>
         </div>
 
+        <!-- Order Type -->
+        <div class="col-md-6">
+          <label class="form-label">Order Type</label>
+          <select class="form-select" name="order_type" id="order_type" required>
+            <option value="">Select Order Type</option>
+            <option value="s-tax">Tax</option>
+            <option value="s-bdc">BDC</option>
+            <option value="combo">Combo</option>
+          </select>
+          <small class="text-muted">Choose how this order should be processed.</small>
+        </div>
+
+        <!-- Quantity -->
         <div class="col-md-6">
           <label class="form-label">Quantity</label>
           <select class="form-select" name="quantity" id="quantity" required>
@@ -127,7 +134,7 @@
           </select>
         </div>
 
-        <!-- Truck Selection -->
+        <!-- Hire Truck (admin pool, optional) -->
         <div class="col-md-12">
           <label class="form-label">Hire Truck (Optional)</label>
           <select class="form-select" id="truck_selector">
@@ -146,14 +153,39 @@
           <small class="text-muted">You may also enter truck details manually below.</small>
         </div>
 
+        <!-- Recent Trucks (per client) -->
+        <div class="col-md-12">
+          <label class="form-label">Recent Trucks</label>
+          <select id="recent_trucks" class="form-select">
+            <option value="">-- Select from your recent trucks --</option>
+            {% for t in recent_trucks %}
+              <option
+                value="{{ t.vehicle_number }}"
+                data-destination="{{ t.destination or '' }}"
+                data-driver="{{ t.driver_name or '' }}"
+                data-phone="{{ t.driver_phone or '' }}"
+              >
+                {{ t.vehicle_number }}{% if t.driver_name %} — {{ t.driver_name }}{% endif %}{% if t.destination %} ({{ t.destination }}){% endif %}
+              </option>
+            {% endfor %}
+          </select>
+          <small class="text-muted">Pick a saved truck to auto-fill details.</small>
+        </div>
+
+        <!-- Vehicle Number + Autocomplete (still supported) -->
         <div class="col-md-6">
           <label class="form-label">Vehicle Number</label>
-          <input type="text" class="form-control" name="vehicle_number" id="vehicle_number" placeholder="Enter or select above" required>
+          <div class="ac-wrap">
+            <input type="text" class="form-control" name="vehicle_number" id="vehicle_number"
+                   placeholder="Enter or select above" required
+                   aria-autocomplete="list" aria-expanded="false" aria-haspopup="listbox" aria-owns="ac-list">
+            <div id="ac-list" class="ac-list" role="listbox" aria-label="Vehicle suggestions"></div>
+          </div>
         </div>
 
         <div class="col-md-6">
           <label class="form-label">Destination</label>
-          <input type="text" class="form-control" name="region" placeholder="e.g. Western Region" required>
+          <input type="text" class="form-control" name="region" id="region" placeholder="e.g. Western Region" required>
         </div>
 
         <div class="col-md-6">
@@ -183,6 +215,8 @@
   const driverEl  = document.getElementById('driver_name');
   const phoneEl   = document.getElementById('driver_phone');
   const qtySel    = document.getElementById('quantity');
+  const regionEl  = document.getElementById('region');
+  const recentSel = document.getElementById('recent_trucks');
 
   function parseCapacity(raw){
     if (!raw) return null;
@@ -222,67 +256,209 @@
     selectQuantityByCapacity(cap);
   });
 
-  // ---------- S-Price / S-Tax / Total badges ----------
-  const productSelect = document.getElementById('productSelect');
-  const sPriceVal = document.getElementById('sPriceVal');
-  const sTaxVal   = document.getElementById('sTaxVal');
-  const sTotalVal = document.getElementById('sTotalVal');
+  // ---------- Recent Trucks -> autofill ----------
+  recentSel?.addEventListener('change', () => {
+    const opt = recentSel.options[recentSel.selectedIndex];
+    if (!opt || !opt.value) return;
+    vehicleEl.value = opt.value || vehicleEl.value;
+    regionEl.value  = opt.getAttribute('data-destination') || regionEl.value;
+    driverEl.value  = opt.getAttribute('data-driver') || driverEl.value;
+    phoneEl.value   = opt.getAttribute('data-phone') || phoneEl.value;
+    // Optional focus progression
+    document.getElementById('quantity')?.focus();
+  });
 
-  function fmt(n){
-    const num = Number(n);
-    return Number.isFinite(num)
-      ? num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-      : '0.00';
+  // ---------- Vehicle Number Autocomplete (truck_numbers) ----------
+  const acList = document.getElementById('ac-list');
+  let acItems = [];
+  let acIndex = -1; // keyboard highlight
+  let acAbort = null;
+  let debounceTimer = null;
+
+  function showList(){
+    if (acList.children.length > 0){
+      acList.style.display = 'block';
+      vehicleEl.setAttribute('aria-expanded', 'true');
+    }
+  }
+  function hideList(){
+    acList.style.display = 'none';
+    vehicleEl.setAttribute('aria-expanded', 'false');
+    acIndex = -1;
   }
 
-  async function fetchPricePack(name){
-    try{
-      const res = await fetch(`/client/product_price?name=${encodeURIComponent(name)}`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (data && data.success) {
-        return {
-          s_price: Number(data.s_price || 0),
-          s_tax:   Number(data.s_tax   || 0),
-          s_total: Number(data.s_total || 0)
-        };
-      }
-    }catch(e){ /* ignore */ }
-    return null;
+  function setLoading(state){
+    vehicleEl.classList.toggle('is-loading', !!state);
   }
 
-  async function updatePriceBadges(){
-    const opt = productSelect.options[productSelect.selectedIndex];
-    if (!opt || !opt.value){
-      sPriceVal.textContent = '0.00';
-      sTaxVal.textContent   = '0.00';
-      sTotalVal.textContent = '0.00';
+  function renderItems(items){
+    acList.innerHTML = '';
+    acItems = [];
+    if (!items || items.length === 0){
+      const div = document.createElement('div');
+      div.className = 'ac-empty';
+      div.textContent = 'No matches';
+      acList.appendChild(div);
       return;
     }
+    items.forEach((it, idx) => {
+      const row = document.createElement('div');
+      row.className = 'ac-item';
+      row.setAttribute('role', 'option');
+      row.dataset.index = idx;
 
-    // Prefer <option> data-* for speed
-    let sprice = Number(opt.getAttribute('data-sprice') || 0);
-    let stax   = Number(opt.getAttribute('data-stax')   || 0);
+      const icon = document.createElement('i');
+      icon.className = 'bi bi-truck';
+      icon.style.marginTop = '2px';
 
-    // If missing, fallback to API
-    if (!Number.isFinite(sprice) || !Number.isFinite(stax)) {
-      const pack = await fetchPricePack(opt.value);
-      if (pack){
-        sprice = pack.s_price;
-        stax   = pack.s_tax;
-      }
-    }
+      const textWrap = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 'ac-title';
+      title.textContent = it.vehicle_number || '';
 
-    const stotal = (Number.isFinite(sprice) ? sprice : 0) + (Number.isFinite(stax) ? stax : 0);
+      const meta = document.createElement('div');
+      meta.className = 'ac-meta';
+      const dest = it.destination ? ` • ${it.destination}` : '';
+      const dname = it.driver_name ? ` • ${it.driver_name}` : '';
+      const dphone = it.driver_phone ? ` • ${it.driver_phone}` : '';
+      meta.textContent = `${dest}${dname}${dphone}`.replace(/^ • /,'');
 
-    sPriceVal.textContent = fmt(sprice);
-    sTaxVal.textContent   = fmt(stax);
-    sTotalVal.textContent = fmt(stotal);
+      textWrap.appendChild(title);
+      textWrap.appendChild(meta);
+
+      row.appendChild(icon);
+      row.appendChild(textWrap);
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // avoid blur hiding list too early
+        chooseItem(idx);
+      });
+
+      acList.appendChild(row);
+      acItems.push(it);
+    });
   }
 
-  productSelect.addEventListener('change', updatePriceBadges);
-  // Initialize on load (if first option preselected)
-  updatePriceBadges();
+  function chooseItem(idx){
+    const it = acItems[idx];
+    if (!it) return;
+    vehicleEl.value = it.vehicle_number || '';
+    regionEl.value  = it.destination || regionEl.value;
+    driverEl.value  = it.driver_name || driverEl.value;
+    phoneEl.value   = it.driver_phone || phoneEl.value;
+    hideList();
+    vehicleEl.focus();
+  }
+
+  function highlight(idx){
+    const rows = acList.querySelectorAll('.ac-item');
+    rows.forEach(r => r.classList.remove('active'));
+    if (idx >= 0 && rows[idx]){
+      rows[idx].classList.add('active');
+      rows[idx].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function debounce(fn, wait){
+    return (...args) => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => fn(...args), wait);
+    }
+  }
+
+  async function fetchSuggest(q){
+    if (acAbort){ acAbort.abort(); }
+    acAbort = new AbortController();
+    const { signal } = acAbort;
+
+    try{
+      setLoading(true);
+      const res = await fetch(`/client/truck_suggest?q=${encodeURIComponent(q)}`, { signal });
+      if (!res.ok) throw new Error('Network');
+      const data = await res.json();
+      return (data && data.success && Array.isArray(data.items)) ? data.items : [];
+    }catch(e){
+      return [];
+    }finally{
+      setLoading(false);
+    }
+  }
+
+  async function doSuggest(q){
+    if (!q || q.trim().length < 2){
+      hideList();
+      return;
+    }
+    const items = await fetchSuggest(q.trim());
+    renderItems(items);
+    showList();
+  }
+
+  const debouncedSuggest = debounce(doSuggest, 200);
+
+  vehicleEl.addEventListener('input', (e) => {
+    const v = e.target.value;
+    if (!v){ hideList(); return; }
+    debouncedSuggest(v);
+  });
+
+  vehicleEl.addEventListener('focus', () => {
+    const v = vehicleEl.value.trim();
+    if (v.length >= 2 && acList.children.length > 0){
+      showList();
+    }
+  });
+
+  vehicleEl.addEventListener('blur', async () => {
+    setTimeout(hideList, 100);
+    // On blur, attempt a direct lookup to auto-fill if exact plate exists
+    const plate = vehicleEl.value.trim();
+    if (!plate) return;
+
+    try{
+      const res = await fetch(`/client/truck_lookup?vehicle_number=${encodeURIComponent(plate)}`);
+      if (res.ok){
+        const data = await res.json();
+        if (data && data.success && data.data){
+          const it = data.data;
+          regionEl.value = it.destination || regionEl.value;
+          driverEl.value = it.driver_name || driverEl.value;
+          phoneEl.value  = it.driver_phone || phoneEl.value;
+        }
+      }
+    }catch(_){}
+  });
+
+  vehicleEl.addEventListener('keydown', (e) => {
+    const visible = acList.style.display === 'block';
+    if (!visible) return;
+
+    const rows = acList.querySelectorAll('.ac-item');
+    const max = rows.length - 1;
+    if (e.key === 'ArrowDown'){
+      e.preventDefault();
+      acIndex = Math.min(max, acIndex + 1);
+      highlight(acIndex);
+    } else if (e.key === 'ArrowUp'){
+      e.preventDefault();
+      acIndex = Math.max(0, acIndex - 1);
+      highlight(acIndex);
+    } else if (e.key === 'Enter'){
+      e.preventDefault();
+      if (acIndex >= 0){ chooseItem(acIndex); }
+    } else if (e.key === 'Escape'){
+      e.preventDefault();
+      hideList();
+    }
+  });
+
+  // Optional: simple phone normalization (keeps digits and +)
+  phoneEl.addEventListener('blur', () => {
+    const raw = phoneEl.value || '';
+    const cleaned = raw.replace(/[^\d+]/g, '');
+    phoneEl.value = cleaned;
+  });
+
+  // No pricing logic/UI included intentionally
 </script>
 
 </body>
