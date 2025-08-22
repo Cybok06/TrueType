@@ -37,7 +37,7 @@ def _norm_plate(s: str) -> str:
         return ""
     return re.sub(r"[^A-Za-z0-9]", "", s).upper()
 
-_VALID_ORDER_TYPES = {"s-tax", "s-bdc", "combo"}
+_VALID_ORDER_TYPES = {"s_tax", "s_bdc", "combo"}
 
 @client_order_bp.route('/submit_order', methods=['GET', 'POST'])
 def submit_order():
