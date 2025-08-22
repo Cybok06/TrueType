@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, sessio
 from datetime import datetime
 from bson import ObjectId, Regex
 from db import db
-import random, string
+import random, string, re
 from pymongo.errors import DuplicateKeyError
 
 client_order_bp = Blueprint('client_order', __name__, template_folder='templates')
@@ -11,9 +11,12 @@ orders_collection = db["orders"]
 products_collection = db["products"]
 trucks_collection = db["trucks"]
 truck_orders_collection = db["truck_orders"]
+truck_numbers_collection = db["truck_numbers"]
 
-# Ensure unique human-friendly order_id
+# Indexes
 orders_collection.create_index("order_id", unique=True, sparse=True)
+truck_numbers_collection.create_index([("vehicle_number_norm", 1)], name="vehicle_number_norm_idx")
+truck_numbers_collection.create_index([("client_id", 1), ("vehicle_number_norm", 1)], name="client_vehicle_norm_idx")
 
 def _to_int_qty(q):
     if not q:
@@ -24,11 +27,17 @@ def _maybe_oid(val):
     try:
         return ObjectId(val)
     except Exception:
-        return val  # fall back to raw string if not a valid ObjectId
+        return val
 
 def _generate_order_id():
-    """Return a random 5-char uppercase alphanumeric code."""
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+
+def _norm_plate(s: str) -> str:
+    if not s:
+        return ""
+    return re.sub(r"[^A-Za-z0-9]", "", s).upper()
+
+_VALID_ORDER_TYPES = {"s-tax", "s-bdc", "combo"}
 
 @client_order_bp.route('/submit_order', methods=['GET', 'POST'])
 def submit_order():
@@ -40,21 +49,24 @@ def submit_order():
         product = request.form.get('product')
         quantity = _to_int_qty(request.form.get('quantity'))
         region = request.form.get('region')
-        vehicle_number = request.form.get('vehicle_number')
-        driver_name = request.form.get('driver_name')
-        driver_phone = request.form.get('driver_phone')
-        selected_truck_number = request.form.get('vehicle_number')  # used for matching below
+        vehicle_number = (request.form.get('vehicle_number') or "").strip()
+        driver_name = (request.form.get('driver_name') or "").strip()
+        driver_phone = (request.form.get('driver_phone') or "").strip()
+        order_type = (request.form.get('order_type') or '').strip().lower()
 
-        if not all([product, quantity, region, vehicle_number, driver_name, driver_phone]):
+        if not all([product, quantity, region, vehicle_number, driver_name, driver_phone, order_type]):
             flash("All fields are required.", "danger")
             return redirect(url_for('client_order.submit_order'))
+        if order_type not in _VALID_ORDER_TYPES:
+            flash("Invalid order type selected.", "danger")
+            return redirect(url_for('client_order.submit_order'))
 
-        # Try to find a truck match by truck_number (used in dropdown)
-        truck = trucks_collection.find_one({"truck_number": selected_truck_number})
+        # Optional match against admin pool
+        truck = trucks_collection.find_one({"truck_number": vehicle_number})
 
-        # Snapshot current product prices + taxes into the order
+        # Snapshot product pricing/taxes internally (not shown to client)
         prod_doc = products_collection.find_one(
-            {"name": Regex(f"^{product}$", "i")},
+            {"name": Regex(f"^{re.escape(product)}$", "i")},
             {"s_price": 1, "p_price": 1, "s_tax": 1, "p_tax": 1, "name": 1}
         )
         snapshot_s_price = (prod_doc or {}).get("s_price")
@@ -62,7 +74,6 @@ def submit_order():
         snapshot_s_tax   = (prod_doc or {}).get("s_tax")
         snapshot_p_tax   = (prod_doc or {}).get("p_tax")
 
-        # Build the base order doc
         base_order = {
             "client_id": _maybe_oid(session['client_id']),
             "product": product,
@@ -73,7 +84,7 @@ def submit_order():
             "region": region,
             "status": "pending",
             "date": datetime.utcnow(),
-            # store current prices & taxes at order time (what the client saw)
+            "order_type": order_type,
             "product_s_price": snapshot_s_price,
             "product_p_price": snapshot_p_price,
             "product_s_tax":   snapshot_s_tax,
@@ -82,7 +93,6 @@ def submit_order():
         if truck:
             base_order["truck_id"] = truck["_id"]
 
-        # Insert with a unique 5-char order_id; retry on rare collisions
         while True:
             code = _generate_order_id()
             doc = dict(base_order)
@@ -92,9 +102,8 @@ def submit_order():
                 order_mongo_id = result.inserted_id
                 break
             except DuplicateKeyError:
-                continue  # try another code
+                continue
 
-        # If truck was selected, create entry in truck_orders for admin approval
         if truck:
             truck_orders_collection.insert_one({
                 "order_ref": str(order_mongo_id),
@@ -110,58 +119,55 @@ def submit_order():
                 "created_at": datetime.utcnow()
             })
 
+        # Upsert into per-client recent trucks address book
+        vehicle_number_norm = _norm_plate(vehicle_number)
+        upsert_doc = {
+            "client_id": _maybe_oid(session.get('client_id')),
+            "vehicle_number": vehicle_number,
+            "vehicle_number_norm": vehicle_number_norm,
+            "destination": region,
+            "driver_name": driver_name,
+            "driver_phone": driver_phone,
+            "updated_at": datetime.utcnow(),
+        }
+        truck_numbers_collection.update_one(
+            {"client_id": _maybe_oid(session.get('client_id')), "vehicle_number_norm": vehicle_number_norm},
+            {"$set": upsert_doc, "$setOnInsert": {"created_at": datetime.utcnow()}},
+            upsert=True
+        )
+
         flash(f"Order submitted successfully! Your Order ID is {code}", "success")
         return redirect(url_for('client_order.submit_order'))
 
-    # GET request: fetch product (with prices + taxes) and truck options
-    products = list(products_collection.find(
-        {},
-        {"name": 1, "description": 1, "s_price": 1, "p_price": 1, "s_tax": 1, "p_tax": 1}
-    ))
-    trucks = list(trucks_collection.find(
-        {},
-        {"truck_number": 1, "capacity": 1, "driver_name": 1, "driver_phone": 1}
-    ))
-    return render_template('client/client_order.html', products=products, trucks=trucks)
+    # ----- GET: include per-client RECENT TRUCKS -----
+    products = list(products_collection.find({}, {"name": 1, "description": 1}))
+    trucks   = list(trucks_collection.find({}, {"truck_number": 1, "capacity": 1, "driver_name": 1, "driver_phone": 1}))
 
-@client_order_bp.route('/client/product_price', methods=['GET'])
-def client_product_price():
-    """
-    AJAX: Return s_price, p_price, s_tax, p_tax, and a convenience s_total (per L)
-    for a given product name.
-    Query: /client/product_price?name=Ago%20cell%20Site
-    Response: {
-      success: True,
-      s_price: 9.0, p_price: 8.9,
-      s_tax: 0.5, p_tax: 0.3,
-      s_total: 9.5
-    }
-    """
-    name = (request.args.get('name') or '').strip()
-    if not name:
-        return jsonify({"success": False, "error": "Missing product name"}), 400
+    # pull last 20 saved trucks for this clientId (dedup by vehicle_number_norm, most recent first)
+    cid = _maybe_oid(session['client_id'])
+    recents_cursor = truck_numbers_collection.find(
+        {"client_id": cid},
+        {"_id": 0, "vehicle_number": 1, "destination": 1, "driver_name": 1, "driver_phone": 1, "vehicle_number_norm": 1, "updated_at": 1}
+    ).sort("updated_at", -1).limit(100)
 
-    product = products_collection.find_one(
-        {"name": Regex(f"^{name}$", "i")},
-        {"s_price": 1, "p_price": 1, "s_tax": 1, "p_tax": 1}
-    )
-    if not product:
-        return jsonify({"success": False, "error": "Product not found"}), 404
+    # Deduplicate by normalized plate while preserving order
+    seen = set()
+    recent_trucks = []
+    for doc in recents_cursor:
+        norm = doc.get("vehicle_number_norm")
+        if norm in seen: 
+            continue
+        seen.add(norm)
+        recent_trucks.append({
+            "vehicle_number": doc.get("vehicle_number", ""),
+            "destination": doc.get("destination", ""),
+            "driver_name": doc.get("driver_name", ""),
+            "driver_phone": doc.get("driver_phone", "")
+        })
+        if len(recent_trucks) >= 20:
+            break
 
-    def _num(v): 
-        try: return float(v or 0)
-        except Exception: return 0.0
+    return render_template('client/client_order.html',
+                           products=products, trucks=trucks, recent_trucks=recent_trucks)
 
-    s_price = _num(product.get("s_price"))
-    p_price = _num(product.get("p_price"))
-    s_tax   = _num(product.get("s_tax"))
-    p_tax   = _num(product.get("p_tax"))
-
-    return jsonify({
-        "success": True,
-        "s_price": s_price,
-        "p_price": p_price,
-        "s_tax":   s_tax,
-        "p_tax":   p_tax,
-        "s_total": s_price + s_tax
-    })
+# (Keep your /client/truck_suggest and /client/truck_lookup if you still want typeahead.)
