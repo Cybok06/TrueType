@@ -105,16 +105,23 @@ def update_order(order_id):
         "due_date": form.get("due_date"),
         "payment_type": (form.get("payment_type") or "").strip(),
         "payment_amount": form.get("payment_amount"),
-        "shareholder": (form.get("shareholder") or "").strip()
+        "shareholder": (form.get("shareholder") or "").strip(),
+
+        # NEW (optional): if you add a hidden/select field for bank on the form
+        "bank_id": (form.get("bank_id") or "").strip(),
+        # optional refs (only used if bank_id is set)
+        "bank_reference": (form.get("bank_reference") or "").strip(),
+        "bank_paid_by": (form.get("bank_paid_by") or "").strip(),
+        "bank_payment_date": (form.get("bank_payment_date") or "").strip(),  # YYYY-MM-DD
     }
 
-    # Basic requireds: OMC & DEPOT always; BDC required unless S-Tax
+    # Basic requireds...
     if not all([fields["omc"], fields["depot"]]):
         return jsonify({"success": False, "error": "OMC and DEPOT are required."}), 400
     if mode != "s_tax" and not fields["bdc"]:
         return jsonify({"success": False, "error": "BDC is required for this order type."}), 400
 
-    # Fetch order + client
+    # Fetch order + client ...
     try:
         order = orders_collection.find_one({"_id": ObjectId(order_id)})
     except Exception:
@@ -130,15 +137,19 @@ def update_order(order_id):
         client = None
 
     # Parse numeric inputs
+    def _f(v):
+        try: return float(v)
+        except (TypeError, ValueError): return None
+
+    def _nz(v): return v if v is not None else 0.0
+
     p     = _f(fields["p_bdc_omc"])   # P-BDC
     s     = _f(fields["s_bdc_omc"])   # S-BDC
     p_tax = _f(fields["p_tax"])       # P-Tax
     s_tax = _f(fields["s_tax"])       # S-Tax
+    q     = _f(order.get("quantity")) or 0.0
 
-    # Quantity from the order
-    q = _f(order.get("quantity")) or 0.0
-
-    # Validate based on order type
+    # Validate by order type...
     if mode not in ("s_bdc", "s_tax", "combo"):
         return jsonify({"success": False, "error": "Invalid order type."}), 400
     if mode == "s_bdc" and s is None:
@@ -160,12 +171,12 @@ def update_order(order_id):
     else:  # combo
         total_debt = (_nz(s) + _nz(s_tax)) * q
 
-    # ---- RETURNS: use MARGINS, not S values ----
+    # ---- RETURNS ----
     returns_price = _nz(margin_price) * q
     returns_tax   = _nz(margin_tax) * q
     returns_total = returns_price + returns_tax
 
-    # Build update doc
+    # Build update doc (unchanged)
     update_data = {
         "omc": fields["omc"],
         "depot": fields["depot"],
@@ -179,7 +190,7 @@ def update_order(order_id):
         "returns_sbdc": round(returns_price, 2),
         "returns_stax": round(returns_tax, 2),
         "returns_total": round(returns_total, 2),
-        "returns": round(returns_total, 2),  # legacy alias
+        "returns": round(returns_total, 2),
     }
     if margin_price is not None:
         update_data["margin_price"] = round(margin_price, 2)
@@ -196,12 +207,12 @@ def update_order(order_id):
     else:
         update_data["due_date"] = None
 
-    # BDC lookup & set only when not S-Tax (still validate & capture names for UI)
+    # BDC lookup & set (when not S-Tax)
     bdc_id = None
     if mode != "s_tax":
         try:
             bdc_id = ObjectId(fields["bdc"])
-        except (ValueError, errors.InvalidId):
+        except Exception:
             return jsonify({"success": False, "error": "Invalid BDC ID"}), 400
 
         bdc = bdc_collection.find_one({"_id": bdc_id})
@@ -212,19 +223,22 @@ def update_order(order_id):
         update_data["bdc_name"] = bdc.get("name", "")
 
     # ---------------------------
-    # Payment handling (ONLY -> s_bdc_payment)
+    # Payment handling -> s_bdc_payment (FIXED)
     # ---------------------------
     payment_type_norm = (fields["payment_type"] or "").strip().lower()
 
     if mode != "s_tax" and payment_type_norm in ("cash", "from account", "credit"):
         if p is None:
             return jsonify({"success": False, "error": "P-BDC is required to compute payment amount"}), 400
-        calc_amount = round(q * p, 2)
 
-        # EXACT schema as BDC.payment_details items
+        calc_amount = round(q * p, 2)
+        # decide bank_status
+        bank_status = "paid" if payment_type_norm == "cash" else "pending"
+
         payment_entry = {
             "order_id": ObjectId(order_id),
-            "payment_type": fields["payment_type"],  # original case
+            "bdc_id": bdc_id,                       # <-- NEW: keep link to BDC
+            "payment_type": fields["payment_type"], # original case
             "amount": calc_amount,
             "client_name": client_name or "—",
             "product": order.get("product", ""),
@@ -235,13 +249,38 @@ def update_order(order_id):
             "region": order.get("region", ""),
             "delivery_status": "pending",
             "shareholder": fields["shareholder"] or None,
+            "bank_status": bank_status,             # <-- NEW
             "date": datetime.utcnow()
         }
 
-        # ✅ Write ONLY to central collection
+        # Optional: if a BANK is selected in the form and it's CASH, stamp history
+        bank_id_raw = fields["bank_id"]
+        if payment_type_norm == "cash" and bank_id_raw and ObjectId.is_valid(bank_id_raw):
+            bank_oid = ObjectId(bank_id_raw)
+            # figure a date for the bank stamp
+            pay_dt = datetime.utcnow()
+            if fields["bank_payment_date"]:
+                try:
+                    pay_dt = datetime.strptime(fields["bank_payment_date"], "%Y-%m-%d")
+                except ValueError:
+                    pass
+
+            payment_entry.update({
+                "bank_paid_total": calc_amount,
+                "bank_paid_history": [{
+                    "bank_id": bank_oid,
+                    "amount": calc_amount,
+                    "date": pay_dt,
+                    "reference": fields["bank_reference"] or None,
+                    "paid_by": fields["bank_paid_by"] or None
+                }],
+                "last_bank_id": bank_oid,
+                "last_bank_paid_at": pay_dt
+            })
+
         s_bdc_payment_collection.insert_one(payment_entry)
 
-    # Status
+    # Status flags
     complete_fields = (update_data.get("total_debt") is not None) and (
         (mode == "s_tax" and ("returns_total" in update_data or "margin_tax" in update_data)) or
         (mode in ("s_bdc", "combo") and ("returns_total" in update_data or "margin" in update_data))
@@ -251,16 +290,11 @@ def update_order(order_id):
 
     orders_collection.update_one({"_id": ObjectId(order_id)}, {"$set": update_data})
 
-    # When approved, send invoice_url for client-side redirect
     approved = (update_data["status"] == "approved")
-    resp = {
-        "success": True,
-        "message": "Order updated" + (" and approved" if approved else " (still pending)")
-    }
+    resp = {"success": True, "message": "Order updated" + (" and approved" if approved else " (still pending)")}
     if approved:
         resp["approved"] = True
         resp["invoice_url"] = url_for("orders.order_invoice", order_id=order_id)
-
     return jsonify(resp)
 
 @orders_bp.route('/get_product_price', methods=['GET'])
