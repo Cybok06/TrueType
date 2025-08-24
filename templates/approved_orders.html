@@ -76,8 +76,8 @@
       </thead>
       <tbody>
         {% for order in orders %}
-        {% set s_component_total = (order.s_tax or 0) + (order.s_bdc_omc or 0) %}
-        {% set left_amt = (order.total_debt or 0) - (order.amount_paid or 0) %}
+        {% set s_component_total = (order.s_tax or 0.0) + (order.s_bdc_omc or 0.0) %}
+        {% set left_amt = (order.total_debt or 0.0) - (order.amount_paid or 0.0) %}
         <tr>
           <td>{{ order.date.strftime('%d-%b-%Y') if order.date else '-' }}</td>
           <td>
@@ -92,17 +92,22 @@
           <td>{{ order.omc }}</td>
           <td>{{ order.bdc_name or '-' }}</td>
           <td>{{ order.depot }}</td>
-          <td>{{ "{:,}".format(order.quantity|int) }}</td>
-          <td>{{ "%.2f" % (order.p_bdc_omc or 0) }}</td>
-          <td>{{ "%.2f" % (order.s_bdc_omc or 0) }}</td>
-          <td>{{ "%.2f" % (order.p_tax or 0) }}</td>
-          <td>{{ "%.2f" % (order.s_tax or 0) }}</td>
-          <td>{{ "%.2f" % s_component_total }}</td>
-          <td>{{ "%.2f" % (order.margin or 0) }}</td>
-          <td>{{ "%.2f" % (order.returns or 0) }}</td>
-          <td>{{ "%.2f" % (order.total_debt or 0) }}</td>
-          <td>{{ "%.2f" % (order.amount_paid or 0) }}</td>
-          <td>{{ "%.2f" % left_amt }}</td>
+
+          <!-- Quantity (integer with thousand separator) -->
+          <td>{{ "{:,}".format((order.quantity or 0)|int) }}</td>
+
+          <!-- Prices/Amounts with thousand separators and 2 decimals -->
+          <td>{{ "{:,.2f}".format(order.p_bdc_omc or 0.0) }}</td>
+          <td>{{ "{:,.2f}".format(order.s_bdc_omc or 0.0) }}</td>
+          <td>{{ "{:,.2f}".format(order.p_tax or 0.0) }}</td>
+          <td>{{ "{:,.2f}".format(order.s_tax or 0.0) }}</td>
+          <td>{{ "{:,.2f}".format(s_component_total) }}</td>
+          <td>{{ "{:,.2f}".format(order.margin or 0.0) }}</td>
+          <td>{{ "{:,.2f}".format(order.returns or 0.0) }}</td>
+          <td>{{ "{:,.2f}".format(order.total_debt or 0.0) }}</td>
+          <td>{{ "{:,.2f}".format(order.amount_paid or 0.0) }}</td>
+          <td>{{ "{:,.2f}".format(left_amt) }}</td>
+
           <td>
             {% if order.shareholder %}
               <span class="badge {% if order.shareholder == 'Neutral' %}bg-secondary{% else %}bg-primary{% endif %}">
@@ -144,8 +149,8 @@
 <script>
   $(document).ready(function () {
     const table = $('#approvedOrdersTable').DataTable({
-      responsive: false,      // keep all columns visible for export consistency
-      scrollX: true,          // allow horizontal scroll for many columns
+      responsive: false,
+      scrollX: true,
       ordering: true,
       pageLength: 50,
       order: [[0, 'desc']],
@@ -218,16 +223,26 @@
         }
       ],
 
-      // Normalize search/sort to the cell's plain text (fixes filters on link/badge columns)
+      // Normalize search/sort; ensure numeric sort works with thousands separators
       columnDefs: [{
         targets: '_all',
         render: function (data, type) {
-          if (type === 'filter' || type === 'sort') {
+          const htmlToText = (val) => {
             const tmp = document.createElement('div');
-            tmp.innerHTML = data == null ? '' : String(data);
+            tmp.innerHTML = val == null ? '' : String(val);
             return (tmp.textContent || tmp.innerText || '').trim();
+          };
+
+          if (type === 'sort') {
+            const text = htmlToText(data).replace(/,/g, ''); // drop thousand separators
+            const num = parseFloat(text);
+            // If numeric, return number for proper numeric sort; else return plain text
+            return isNaN(num) ? text : num;
           }
-          return data;
+          if (type === 'filter') {
+            return htmlToText(data);
+          }
+          return data; // display as-is (already formatted from server)
         }
       }]
     });
@@ -239,8 +254,8 @@
       const header = $(column.header()).text().trim();
       const $wrap = $(`
         <div class="col-6 col-md-3 col-lg-2">
-          <select class="form-select form-select-sm" title="\${header}">
-            <option value="">All \${header}</option>
+          <select class="form-select form-select-sm" title="${header}">
+            <option value="">All ${header}</option>
           </select>
         </div>
       `).appendTo('#filtersRow');
