@@ -255,11 +255,12 @@
           <!-- ACTIONS -->
           <div class="col-12">
             <div class="actions-grid">
-              <button type="submit" class="btn btn-{{ 'success' if filled else 'primary' }}">
-                {{ 'Approve & Confirm' if filled else 'Confirm' }}
-              </button>
+             
               <button type="button" class="btn btn-outline-success send-omc-btn">Send to OMC (WhatsApp)</button>
               <button type="button" class="btn btn-outline-success send-bdc-btn">Send to BDC (WhatsApp)</button>
+               <button type="submit" class="btn btn-{{ 'success' if filled else 'primary' }}">
+                {{ 'Approve & Confirm' if filled else 'Confirm' }}
+              </button>
             </div>
           </div>
         </form>
