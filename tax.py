@@ -36,20 +36,20 @@ def _str_oid(v):
 def _month_buckets():
     return {m: 0.0 for m in list(calendar.month_name)[1:]}
 
-def _stax_per_l(order: dict) -> float:
-    """Get S-Tax per litre from the order (supports 's_tax' and 's-tax')."""
-    for k in ("s_tax", "s-tax"):
+def _ptax_per_l(order: dict) -> float:
+    """Get P-Tax per litre from the order (supports 'p_tax' and 'p-tax')."""
+    for k in ("p_tax", "p-tax"):
         if k in order and order.get(k) is not None:
             val = _f(order.get(k), None)
             if val is not None:
                 return float(val)
     return 0.0
 
-def _order_stax_due(order: dict) -> float:
-    """Due = S-Tax per L × quantity."""
+def _order_ptax_due(order: dict) -> float:
+    """Due = P-Tax per L × quantity."""
     q = _f(order.get("quantity"), 0.0)
-    stax = _stax_per_l(order)
-    return round(q * stax, 2)
+    ptax = _ptax_per_l(order)
+    return round(q * ptax, 2)
 
 def _parse_date_start(s):
     if not s:
@@ -69,11 +69,11 @@ def _parse_date_end(s):
     return dt.replace(hour=23, minute=59, second=59, microsecond=999999)
 
 def _paid_type_query():
-    # robust & index-friendly: match s-tax, s_tax, s tax (any case)
-    return {"type": {"$regex": r"^s[\s_-]*tax$", "$options": "i"}}
+    # robust & index-friendly: match p-tax, p_tax, p tax (any case)
+    return {"type": {"$regex": r"^p[\s_-]*tax$", "$options": "i"}}
 
 def _paid_sum_for_order(oid: ObjectId) -> float:
-    """Sum of all S-Tax payments recorded for this order."""
+    """Sum of all P-Tax payments recorded for this order."""
     try:
         pipe = [
             {"$match": {"order_oid": oid, **_paid_type_query()}},
@@ -88,31 +88,27 @@ def _paid_sum_for_order(oid: ObjectId) -> float:
 @tax_bp.route("/tax", methods=["GET"])
 def tax_dashboard():
     # ===== UNPAID (and partially paid) =====
-    # Eligible orders: explicit type 's_tax' OR 'combo' OR has s_tax/s-tax > 0
+    # Eligible orders: those with a positive p_tax per litre (robust to field name)
     base_query = {
         "$or": [
-            {"order_type": "s_tax"},
-            {"order_type": "combo"},
-            {"s_tax": {"$gt": 0}},
-            {"s-tax": {"$gt": 0}},
+            {"p_tax": {"$gt": 0}},
+            {"p-tax": {"$gt": 0}},
         ]
     }
     projection = {
         "_id": 1, "order_id": 1, "omc": 1, "quantity": 1,
-        "s_tax": 1, "s-tax": 1,
+        "p_tax": 1, "p-tax": 1,
         "due_date": 1, "date": 1,
-        # We intentionally ignore legacy s_tax_payment flags here and compute balance
     }
     eligible_orders = list(orders_col.find(base_query, projection).sort("date", -1))
 
     unpaid_rows, total_unpaid_sum = [], 0.0
     for o in eligible_orders:
         oid = o.get("_id")
-        due = _order_stax_due(o)  # s_tax × qty
-        already_paid = _paid_sum_for_order(oid)  # sum of all S-Tax payments
+        due = _order_ptax_due(o)              # p_tax × qty
+        already_paid = _paid_sum_for_order(oid)  # sum of all P-Tax payments
         remaining = max(0.0, round(due - already_paid, 2))
 
-        # show only those with remaining > 0
         if remaining > 0:
             total_unpaid_sum += remaining
             unpaid_rows.append({
@@ -126,9 +122,8 @@ def tax_dashboard():
                 "due_date": o.get("due_date"),
                 "date": o.get("date"),
                 "quantity_fmt": _fmt(_f(o.get("quantity"), 0.0)),
-                # Keep the key name the template expects; now it shows S-Tax per L
-                "s_price_fmt": _fmt(_stax_per_l(o)),
-                # expose already paid for front-end modal
+                # Keep the original key name most templates use; now it shows P-Tax per L
+                "s_price_fmt": _fmt(_ptax_per_l(o)),
                 "already_paid_fmt": _fmt(already_paid),
             })
 
@@ -194,7 +189,7 @@ def tax_dashboard():
             "paid_by": t.get("paid_by", "—"),
         })
 
-    # ===== CARDS: totals per OMC (ALL S-Tax, not filtered) =====
+    # ===== CARDS: totals per OMC (ALL P-Tax, not filtered) =====
     pipeline_cards = [
         {"$match": _paid_type_query()},
         {"$group": {"_id": "$omc", "total": {"$sum": "$amount"}}},
@@ -207,7 +202,7 @@ def tax_dashboard():
         if total > 0:
             omc_cards.append({"omc": name, "total": total, "total_fmt": _fmt(total)})
 
-    # ===== Trend (all S-Tax) =====
+    # ===== Trend (all P-Tax) =====
     trend = _month_buckets()
     for row in tax_col.find(_paid_type_query(), {"amount": 1, "payment_date": 1}):
         dtp = row.get("payment_date")
@@ -239,13 +234,13 @@ def tax_dashboard():
     )
 
 @tax_bp.route("/tax/pay", methods=["POST"])
-def pay_stax():
+def pay_ptax():
     """
     Accepts partial payments. Validates:
-    - order exists and is eligible for S-Tax
+    - order exists and has P-Tax
     - amount > 0
     - amount <= remaining
-    Inserts payment and updates order flags when fully paid.
+    Inserts payment (type=P-Tax) and updates order flags when fully paid.
     Returns JSON with due, already_paid (after), remaining (after).
     """
     try:
@@ -266,21 +261,18 @@ def pay_stax():
         if not order:
             return jsonify({"status": "error", "message": "Order not found"}), 404
 
-        # S-Tax eligible if explicit type s_tax/combo OR has s_tax value
-        is_stax_type    = str(order.get("order_type", "")).lower() in {"s_tax", "combo"}
-        has_stax_value  = _stax_per_l(order) > 0
-        if not (is_stax_type or has_stax_value):
-            return jsonify({"status": "error", "message": "Order has no S-Tax to pay"}), 400
+        has_ptax_value = _ptax_per_l(order) > 0
+        if not has_ptax_value:
+            return jsonify({"status": "error", "message": "Order has no P-Tax to pay"}), 400
 
-        due = _order_stax_due(order)  # s_tax × qty
+        due = _order_ptax_due(order)  # p_tax × qty
         if amount <= 0:
             return jsonify({"status": "error", "message": "Amount must be greater than 0"}), 400
 
         already_paid_before = _paid_sum_for_order(oid)
         remaining_before = max(0.0, round(due - already_paid_before, 2))
         if remaining_before <= 0:
-            # Already fully paid; keep idempotent behavior
-            return jsonify({"status": "error", "message": "S-Tax already fully paid"}), 400
+            return jsonify({"status": "error", "message": "P-Tax already fully paid"}), 400
 
         if amount > remaining_before:
             return jsonify({"status": "error", "message": f"Amount exceeds remaining balance (GH₵ {_fmt(remaining_before)})"}), 400
@@ -293,9 +285,9 @@ def pay_stax():
             except ValueError:
                 return jsonify({"status": "error", "message": "Invalid payment date"}), 400
 
-        # insert payment
+        # insert payment as P-Tax
         tax_col.insert_one({
-            "type": "S-Tax",
+            "type": "P-Tax",
             "amount": round(float(amount), 2),
             "payment_date": pay_dt,
             "reference": reference or None,
@@ -310,25 +302,23 @@ def pay_stax():
         already_paid_after = _paid_sum_for_order(oid)
         remaining_after = max(0.0, round(due - already_paid_after, 2))
 
-        # set flags only when fully paid
+        # Set canonical P-Tax flags; also mirror to s_tax_* to keep legacy readers safe
         update_doc = {
+            # canonical P-Tax fields
+            "p_tax_paid_amount": round(float(already_paid_after), 2),
+            "p_tax_paid_at": pay_dt,
+            "p_tax_reference": reference or order.get("p_tax_reference"),
+            "p_tax_paid_by": paid_by or order.get("p_tax_paid_by"),
+            "p_tax_payment": "paid" if remaining_after <= 0 else "partial",
+            "p-tax-payment": "paid" if remaining_after <= 0 else "partial",
+            # legacy mirrors (optional; remove later when UI is migrated)
             "s_tax_paid_amount": round(float(already_paid_after), 2),
             "s_tax_paid_at": pay_dt,
-            "s_tax_reference": reference or order.get("s_tax_reference"),  # keep last/any
+            "s_tax_reference": reference or order.get("s_tax_reference"),
             "s_tax_paid_by": paid_by or order.get("s_tax_paid_by"),
+            "s_tax_payment": "paid" if remaining_after <= 0 else "partial",
+            "s-tax-payment": "paid" if remaining_after <= 0 else "partial",
         }
-        if remaining_after <= 0:
-            update_doc.update({
-                "s_tax_payment": "paid",
-                "s-tax-payment": "paid",
-            })
-        else:
-            # ensure flags are not incorrectly set to paid
-            update_doc.update({
-                "s_tax_payment": "partial",
-                "s-tax-payment": "partial",
-            })
-
         orders_col.update_one({"_id": oid}, {"$set": update_doc})
 
         return jsonify({
@@ -362,7 +352,7 @@ def add_tax():
                 return jsonify({"status": "error", "message": "Invalid payment date"}), 400
 
         new_tax = {
-            "type": tax_type,
+            "type": tax_type,  # allow manual entries for P-Tax or others
             "amount": round(amount, 2),
             "payment_date": pay_dt,
             "reference": reference,
@@ -456,7 +446,7 @@ def export_tax_pdf():
             c.setFont("Helvetica-Bold", 13)
             c.drawString(x, y - 3*mm, "TrueType Services")
             c.setFont("Helvetica", 10)
-            title = "S-Tax Payments Report"
+            title = "P-Tax Payments Report"
             if omc_f:
                 title += f" — {omc_f}"
             c.drawString(left_margin, y - 12*mm, title)
@@ -524,7 +514,7 @@ def export_tax_pdf():
         buf.seek(0)
 
         safe_omc = re.sub(r'\W+', '_', omc_f.lower()) if omc_f else ""
-        filename = f"s_tax_payments_{safe_omc}.pdf" if safe_omc else "s_tax_payments.pdf"
+        filename = f"p_tax_payments_{safe_omc}.pdf" if safe_omc else "p_tax_payments.pdf"
         return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
     except Exception as e:
         return jsonify({"status": "error", "message": f"PDF generation failed: {e}. Install 'reportlab'."}), 500
