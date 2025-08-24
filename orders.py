@@ -107,9 +107,8 @@ def update_order(order_id):
         "payment_amount": form.get("payment_amount"),
         "shareholder": (form.get("shareholder") or "").strip(),
 
-        # NEW (optional): if you add a hidden/select field for bank on the form
+        # Optional: bank hints from the form (no auto-allocation here)
         "bank_id": (form.get("bank_id") or "").strip(),
-        # optional refs (only used if bank_id is set)
         "bank_reference": (form.get("bank_reference") or "").strip(),
         "bank_paid_by": (form.get("bank_paid_by") or "").strip(),
         "bank_payment_date": (form.get("bank_payment_date") or "").strip(),  # YYYY-MM-DD
@@ -223,7 +222,11 @@ def update_order(order_id):
         update_data["bdc_name"] = bdc.get("name", "")
 
     # ---------------------------
-    # Payment handling -> s_bdc_payment (FIXED)
+    # Payment handling -> s_bdc_payment
+    #  Cash NOW behaves like From Account / Credit:
+    #   - create as bank_status="pending"
+    #   - no immediate bank_paid_total/history on insert
+    #   - clearing happens ONLY via bank-profile allocations
     # ---------------------------
     payment_type_norm = (fields["payment_type"] or "").strip().lower()
 
@@ -232,13 +235,11 @@ def update_order(order_id):
             return jsonify({"success": False, "error": "P-BDC is required to compute payment amount"}), 400
 
         calc_amount = round(q * p, 2)
-        # decide bank_status
-        bank_status = "paid" if payment_type_norm == "cash" else "pending"
 
         payment_entry = {
             "order_id": ObjectId(order_id),
-            "bdc_id": bdc_id,                       # <-- NEW: keep link to BDC
-            "payment_type": fields["payment_type"], # original case
+            "bdc_id": bdc_id,
+            "payment_type": fields["payment_type"],  # keep original case
             "amount": calc_amount,
             "client_name": client_name or "—",
             "product": order.get("product", ""),
@@ -249,34 +250,15 @@ def update_order(order_id):
             "region": order.get("region", ""),
             "delivery_status": "pending",
             "shareholder": fields["shareholder"] or None,
-            "bank_status": bank_status,             # <-- NEW
+            "bank_status": "pending",         # ← unified behavior for cash/from account/credit
+            # NOTE: no bank_paid_total / bank_paid_history here
             "date": datetime.utcnow()
         }
 
-        # Optional: if a BANK is selected in the form and it's CASH, stamp history
-        bank_id_raw = fields["bank_id"]
-        if payment_type_norm == "cash" and bank_id_raw and ObjectId.is_valid(bank_id_raw):
-            bank_oid = ObjectId(bank_id_raw)
-            # figure a date for the bank stamp
-            pay_dt = datetime.utcnow()
-            if fields["bank_payment_date"]:
-                try:
-                    pay_dt = datetime.strptime(fields["bank_payment_date"], "%Y-%m-%d")
-                except ValueError:
-                    pass
-
-            payment_entry.update({
-                "bank_paid_total": calc_amount,
-                "bank_paid_history": [{
-                    "bank_id": bank_oid,
-                    "amount": calc_amount,
-                    "date": pay_dt,
-                    "reference": fields["bank_reference"] or None,
-                    "paid_by": fields["bank_paid_by"] or None
-                }],
-                "last_bank_id": bank_oid,
-                "last_bank_paid_at": pay_dt
-            })
+        # If you want to remember user's chosen bank as a *hint* (no allocation),
+        # uncomment the next two lines:
+        # if fields["bank_id"] and ObjectId.is_valid(fields["bank_id"]):
+        #     payment_entry["intended_bank_id"] = ObjectId(fields["bank_id"])
 
         s_bdc_payment_collection.insert_one(payment_entry)
 
@@ -317,7 +299,6 @@ def get_product_price():
         'p_tax':   product.get('p_tax', 0),
         's_tax':   product.get('s_tax', 0),
     })
-
 
 # --------------- invoice page ---------------
 @orders_bp.route('/invoice/<order_id>', methods=['GET'])
