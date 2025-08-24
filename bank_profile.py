@@ -60,7 +60,6 @@ def bank_profile(bank_id):
         return "Bank not found", 404
 
     bank_id_str = str(bank["_id"])  # provide safe string for templates
-
     bank_name = bank.get("bank_name")
     last4 = (bank.get("account_number") or "")[-4:]
 
@@ -276,9 +275,9 @@ def pay_omc_from_bank():
 @bank_profile_bp.route("/bank-profile/<bank_id>/bdc-debts", methods=["GET"])
 def bdc_debts(bank_id):
     try:
-        # Convert all ids to strings and explicitly drop _id from projection to avoid ObjectId in JSON
+        # Outstanding = amount - bank_paid_total, across all three payment types (cash, from account, credit)
         pipe = [
-            {"$match": {"payment_type": {"$regex": r"^(credit|from\s*account)$", "$options": "i"}}},
+            {"$match": {"payment_type": {"$regex": r"^(cash|credit|from\s*account)$", "$options": "i"}}},
             {"$lookup": {"from": "orders", "localField": "order_id", "foreignField": "_id", "as": "ord"}},
             {"$addFields": {
                 "bdc_id_eff": {"$ifNull": ["$bdc_id", {"$arrayElemAt": ["$ord.bdc_id", 0]}]},
@@ -291,7 +290,7 @@ def bdc_debts(bank_id):
             {"$lookup": {"from": "bdc", "localField": "_id", "foreignField": "_id", "as": "bdc"}},
             {"$addFields": {"bdc_name": {"$arrayElemAt": ["$bdc.name", 0]}}},
             {"$project": {
-                "_id": 0,  # <-- IMPORTANT: drop raw ObjectId
+                "_id": 0,  # drop raw ObjectId
                 "bdc_id": {"$toString": "$_id"},
                 "bdc": "$bdc_name",
                 "outstanding": {"$round": ["$outstanding", 2]},
@@ -330,9 +329,9 @@ def pay_bdc_from_bank():
             except ValueError:
                 return jsonify({"status":"error", "message":"Invalid payment date"}), 400
 
-        # Oldest-first unpaid items for this BDC
+        # Oldest-first unpaid items for this BDC across cash/from account/credit
         pipe = [
-            {"$match": {"payment_type": {"$regex": r"^(credit|from\s*account)$", "$options": "i"}}},
+            {"$match": {"payment_type": {"$regex": r"^(cash|credit|from\s*account)$", "$options": "i"}}},
             {"$lookup": {"from": "orders", "localField": "order_id", "foreignField": "_id", "as": "ord"}},
             {"$addFields": {
                 "bdc_id_eff": {"$ifNull": ["$bdc_id", {"$arrayElemAt": ["$ord.bdc_id", 0]}]},
