@@ -24,22 +24,10 @@
     @keyframes blink { 50% { opacity: .25 } }
 
     /* Custom dropdown slider (independent of Bootstrap collapse) */
-/* Custom dropdown slider (independent of Bootstrap collapse) */
-.submenu {
-  overflow: hidden;
-  max-height: 0;
-  transition: max-height .28s ease;
-  pointer-events: none;           /* prevent clicks when hidden */
-}
-.submenu.open {
-  /* JS sets exact max-height; we just enable interaction here */
-  pointer-events: auto;
-}
+    .submenu { overflow: hidden; max-height: 0; transition: max-height .28s ease; pointer-events: none; }
+    .submenu.open { pointer-events: auto; }
 
-    .sidebar .dropdown-toggle {
-      cursor: pointer;
-      user-select: none;
-    }
+    .sidebar .dropdown-toggle { cursor: pointer; user-select: none; }
   </style>
 
   <!-- Custom Styles -->
@@ -61,133 +49,124 @@
          style="width: 120px; height: 120px; object-fit: contain;">
   </div>
 
+  <!-- DASHBOARD (kept at top) -->
   <a class="sidebar-link" data-url="/home">
-    <i class="bi bi-speedometer2 me-2"></i>Dashboard
+    <i class="bi bi-speedometer2 me-2"></i>DASHBOARD
   </a>
 
-  <!-- Clients Dropdown (Bootstrap collapse removed; using custom .submenu) -->
+  <!-- CLIENTS >> REGISTER CLIENT >> VIEW REGISTERED CLIENTS -->
   <div class="dropdown">
     <a class="sidebar-link dropdown-toggle js-dropdown" href="#" data-target="#clientsMenu" aria-expanded="false">
-      <i class="bi bi-people-fill me-2"></i>Clients
+      <i class="bi bi-people-fill me-2"></i>CLIENTS
     </a>
     <div class="submenu" id="clientsMenu">
-      <a class="sidebar-link ps-4" data-url="/admin/register_client"><i class="bi bi-person-plus-fill me-2"></i>Register</a>
-      <a class="sidebar-link ps-4" data-url="/client_list_partial"><i class="bi bi-card-list me-2"></i>View</a>
+      <a class="sidebar-link ps-4" data-url="/admin/register_client"><i class="bi bi-person-plus-fill me-2"></i>REGISTER CLIENT</a>
+      <a class="sidebar-link ps-4" data-url="/client_list_partial"><i class="bi bi-card-list me-2"></i>VIEW REGISTERED CLIENTS</a>
     </div>
   </div>
 
-  <!-- Orders Dropdown -->
+  <!-- ORDERS >> REVIEW ORDERS >> VIEW APPROVED ORDERS -->
   <div class="dropdown">
     <a class="sidebar-link dropdown-toggle d-flex justify-content-between align-items-center js-dropdown"
        href="#" data-target="#ordersMenu" aria-expanded="false">
-      <span><i class="bi bi-bag-check-fill me-2"></i>Orders</span>
+      <span><i class="bi bi-bag-check-fill me-2"></i>ORDERS</span>
       {% if unapproved_orders_count > 0 %}
         <span class="badge bg-danger rounded-circle px-2 py-1">{{ unapproved_orders_count }}</span>
       {% endif %}
     </a>
     <div class="submenu" id="ordersMenu">
       <a class="sidebar-link d-flex justify-content-between align-items-center ps-4" data-url="/orders">
-        <span><i class="bi bi-search me-2"></i>Review Orders</span>
+        <span><i class="bi bi-search me-2"></i>REVIEW ORDERS</span>
         {% if unapproved_orders_count > 0 %}
           <span class="badge bg-danger rounded-circle px-2 py-1">{{ unapproved_orders_count }}</span>
         {% endif %}
       </a>
       <a class="sidebar-link ps-4" href="/approved_orders" target="_blank">
-        <i class="bi bi-box-arrow-up-right me-2"></i>Approve Orders
+        <i class="bi bi-box-arrow-up-right me-2"></i>VIEW APPROVED ORDERS
       </a>
     </div>
   </div>
 
-  <a class="sidebar-link d-flex justify-content-between align-items-center" data-url="/payments">
-    <span><i class="bi bi-cash-coin me-2"></i>Payments</span>
-    {% if unconfirmed_payments_count > 0 %}
-      <span class="badge bg-danger rounded-circle px-2 py-1">{{ unconfirmed_payments_count }}</span>
-    {% endif %}
-  </a>
-
-  <!-- Debtors Dropdown -->
+  <!-- PAYMENTS >> RECEIVE PAYMENT -->
   <div class="dropdown">
     <a class="sidebar-link dropdown-toggle d-flex justify-content-between align-items-center js-dropdown"
-       href="#" data-target="#debtorsMenu" aria-expanded="false">
-      <span><i class="bi bi-graph-down-arrow me-2"></i>Debtors</span>
-      {% if overdue_clients_count > 0 %}
-        <span class="badge bg-danger rounded-circle px-2 py-1">{{ overdue_clients_count }}</span>
+       href="#" data-target="#paymentsMenu" aria-expanded="false">
+      <span><i class="bi bi-cash-coin me-2"></i>PAYMENTS</span>
+      {% if unconfirmed_payments_count > 0 %}
+        <span class="badge bg-danger rounded-circle px-2 py-1">{{ unconfirmed_payments_count }}</span>
       {% endif %}
     </a>
-    <div class="submenu" id="debtorsMenu">
-      <a class="sidebar-link ps-4" data-url="/debtors/list">
-        <i class="bi bi-table me-2"></i>Table View
-      </a>
-      <a class="sidebar-link ps-4" data-url="/reports">
-        <i class="bi bi-file-earmark-bar-graph me-2"></i>Statements
+    <div class="submenu" id="paymentsMenu">
+      <a class="sidebar-link d-flex justify-content-between align-items-center ps-4" data-url="/payments">
+        <span><i class="bi bi-receipt me-2"></i>RECEIVED PAYMENT</span>
+        {% if unconfirmed_payments_count > 0 %}
+          <span class="badge bg-danger rounded-circle px-2 py-1">{{ unconfirmed_payments_count }}</span>
+        {% endif %}
       </a>
     </div>
   </div>
 
-  <a class="sidebar-link d-flex align-items-center" data-url="/bdc">
-    <i class="bi bi-building me-2"></i>BDC Accounts
-    {% if bdc_debtors_count and bdc_debtors_count > 0 %}
-      <span class="ms-auto badge bg-danger badge-blink"
-            data-bs-toggle="tooltip" data-bs-placement="right"
-            title="{{ bdc_debtors_count }} BDC{{ 's' if bdc_debtors_count != 1 }} with unpaid amount · GHS {{ '%.2f'|format(bdc_outstanding_total) }}">
-        !
-      </span>
-    {% endif %}
-  </a>
-
+  <!-- OMC COMPANIES -->
   <a class="sidebar-link d-flex align-items-center" data-url="/omc">
-    <i class="bi bi-building-check me-2"></i>OMC Companies
+    <i class="bi bi-building-check me-2"></i>OMC COMPANIES
     {% if omc_debtors_count and omc_debtors_count > 0 %}
       <span class="ms-auto badge bg-danger badge-blink"
             data-bs-toggle="tooltip" data-bs-placement="right"
-            title="{{ omc_debtors_count }} OMC{{ 's' if omc_debtors_count != 1 }} with unpaid S-Tax · GHS {{ '%.2f'|format(omc_outstanding_total) }}">
-        !
-      </span>
+            title="{{ omc_debtors_count }} OMC{{ 's' if omc_debtors_count != 1 }} with unpaid S-Tax · GHS {{ '%.2f'|format(omc_outstanding_total) }}">!</span>
     {% endif %}
   </a>
 
-  <a class="sidebar-link d-flex justify-content-between align-items-center" data-url="/shareholders">
-    <span><i class="bi bi-people me-2"></i>Shareholders</span>
+  <!-- BDC ACCOUNTS -->
+  <a class="sidebar-link d-flex align-items-center" data-url="/bdc">
+    <i class="bi bi-building me-2"></i>BDC ACCOUNTS
+    {% if bdc_debtors_count and bdc_debtors_count > 0 %}
+      <span class="ms-auto badge bg-danger badge-blink"
+            data-bs-toggle="tooltip" data-bs-placement="right"
+            title="{{ bdc_debtors_count }} BDC{{ 's' if bdc_debtors_count != 1 }} with unpaid amount · GHS {{ '%.2f'|format(bdc_outstanding_total) }}">!</span>
+    {% endif %}
   </a>
 
+  <!-- TAX-OMC -->
   <a class="sidebar-link d-flex justify-content-between align-items-center" data-url="/tax">
-    <span><i class="bi bi-receipt-cutoff me-2"></i>Tax-OMC</span>
+    <span><i class="bi bi-receipt-cutoff me-2"></i>TAX-OMC</span>
   </a>
 
-  <a class="sidebar-link d-flex justify-content-between align-items-center" data-url="/products">
-    <span><i class="bi bi-box-seam me-2"></i>Products</span>
-  </a>
-
+  <!-- BANK ACCOUNTS -->
   <a class="sidebar-link" data-url="/bank-accounts">
-    <i class="bi bi-bank me-2"></i>Bank Accounts
+    <i class="bi bi-bank me-2"></i>BANK ACCOUNTS
   </a>
 
+  <!-- DELIVERIES -->
   <a class="sidebar-link d-flex justify-content-between align-items-center" data-url="/deliveries">
-    <span><i class="bi bi-truck me-2"></i>Deliveries</span>
+    <span><i class="bi bi-truck me-2"></i>DELIVERIES</span>
   </a>
 
-  <!-- Truck Management Dropdown -->
+  <!-- SHAREHOLDERS -->
+  <a class="sidebar-link d-flex justify-content-between align-items-center" data-url="/shareholders">
+    <span><i class="bi bi-people me-2"></i>SHAREHOLDERS</span>
+  </a>
+
+  <!-- TRUCK MANAGEMENT (kept as dropdown; items uppercased) -->
   <div class="dropdown">
     <a class="sidebar-link dropdown-toggle d-flex justify-content-between align-items-center js-dropdown"
        href="#" data-target="#truckMenu" aria-expanded="false">
-      <span><i class="bi bi-truck-front-fill me-2"></i>Truck Management</span>
+      <span><i class="bi bi-truck-front-fill me-2"></i>TRUCK MANAGEMENT</span>
       {% if unconfirmed_truck_payments_count > 0 %}
         <span class="badge bg-danger rounded-circle px-2 py-1">{{ unconfirmed_truck_payments_count }}</span>
       {% endif %}
     </a>
     <div class="submenu" id="truckMenu">
       <a class="sidebar-link ps-4" data-url="/trucks">
-        <i class="bi bi-gear me-2"></i>Manage Trucks
+        <i class="bi bi-gear me-2"></i>MANAGE TRUCKS
       </a>
       <a class="sidebar-link ps-4 d-flex justify-content-between align-items-center" data-url="/admin/truck_payments">
-        <span><i class="bi bi-cash-stack me-2"></i>Freights transactions</span>
+        <span><i class="bi bi-cash-stack me-2"></i>FREIGHTS TRANSACTIONS</span>
         {% if unconfirmed_truck_payments_count > 0 %}
           <span class="badge bg-danger rounded-circle px-2 py-1">{{ unconfirmed_truck_payments_count }}</span>
         {% endif %}
       </a>
-      <a class="sidebar-link" data-url="/truck_debtors">
-        <i class="bi bi-exclamation-diamond-fill text-danger me-2"></i>
-         Debtors
+      <a class="sidebar-link ps-4" data-url="/truck_debtors">
+        <i class="bi bi-exclamation-diamond-fill text-danger me-2"></i>DEBTORS
         {% if truck_debtors_count > 0 %}
           <span class="badge bg-danger ms-2">{{ truck_debtors_count }}</span>
         {% endif %}
@@ -195,13 +174,20 @@
     </div>
   </div>
 
+  <!-- PRODUCT SETUP -->
+  <a class="sidebar-link d-flex justify-content-between align-items-center" data-url="/products">
+    <span><i class="bi bi-box-seam me-2"></i>PRODUCT SETUP</span>
+  </a>
+
+  <!-- SETTINGS -->
   <a class="sidebar-link" data-url="/admin/settings">
-    <i class="bi bi-gear-fill me-2"></i>Settings
+    <i class="bi bi-gear-fill me-2"></i>SETTINGS
   </a>
 
   <hr class="text-light mx-3" />
+  <!-- LOGOUT -->
   <a class="sidebar-link" href="/logout">
-    <i class="bi bi-box-arrow-right me-2"></i>Logout
+    <i class="bi bi-box-arrow-right me-2"></i>LOGOUT
   </a>
 </div>
 
@@ -263,23 +249,17 @@
 
       const isOpen = menu.classList.contains('open');
       if (isOpen) {
-        // close
-        menu.style.maxHeight = menu.scrollHeight + 'px'; // set current height to allow transition
-        requestAnimationFrame(() => {
-          menu.style.maxHeight = '0px';
-        });
+        menu.style.maxHeight = menu.scrollHeight + 'px';
+        requestAnimationFrame(() => { menu.style.maxHeight = '0px'; });
         menu.classList.remove('open');
         toggleEl.setAttribute('aria-expanded', 'false');
       } else {
-        // open
         menu.classList.add('open');
-        // set to the full height for smooth slide
         menu.style.maxHeight = menu.scrollHeight + 'px';
         toggleEl.setAttribute('aria-expanded', 'true');
       }
     }
 
-    // Initialize listeners
     document.addEventListener('DOMContentLoaded', function () {
       document.querySelectorAll('.js-dropdown').forEach(function (toggleEl) {
         toggleEl.addEventListener('click', function (e) {
@@ -289,7 +269,6 @@
         });
       });
 
-      // Keep open panels sized correctly on resize (content height can change)
       window.addEventListener('resize', function () {
         document.querySelectorAll('.submenu.open').forEach(function (menu) {
           menu.style.maxHeight = menu.scrollHeight + 'px';
