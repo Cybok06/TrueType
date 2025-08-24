@@ -119,7 +119,29 @@
               {{ '{:,.0f}'.format((order.quantity or 0.0)|float) }}
             </td></tr>
             <tr><td class="k">Region</td><td class="v" id="region">{{ order.region or '—' }}</td></tr>
-            
+
+            {% set q = (order.quantity or 0.0)|float %}
+            {% set stax = (order.s_tax or 0.0)|float %}
+            {% set sbdc = (order.s_bdc_omc or 0.0)|float %}
+            {% set has_stax = stax > 0 %}
+            {% set has_sbdc = sbdc > 0 %}
+
+            {# === NEW: Collapse to combo when both exist; otherwise show the one that exists === #}
+            {% if has_stax and has_sbdc %}
+              <tr>
+                <td class="k">Rate (GHS/L)</td>
+                <td class="v mono" id="comboPerL">
+                  {{ '{:,.2f}'.format(stax + sbdc) }}
+                  <span class="chip" style="margin-left:.5rem;">S‑BDC + S‑Tax</span>
+                </td>
+              </tr>
+            {% elif has_stax %}
+              <tr><td class="k">Tax Price (GHS/L)</td><td class="v mono" id="stax">{{ '{:,.2f}'.format(stax) }}</td></tr>
+            {% elif has_sbdc %}
+              <tr><td class="k">BDC Price (GHS/L)</td><td class="v mono" id="sbdc">{{ '{:,.2f}'.format(sbdc) }}</td></tr>
+            {% else %}
+              <tr><td class="k">Combo Price (GHS/L)</td><td class="v mono" id="comboPerL">0.00</td></tr>
+            {% endif %}
           </tbody>
         </table>
       </div>
@@ -132,18 +154,33 @@
         </div>
 
         <div class="box" aria-label="Totals">
-          {% set q = (order.quantity or 0.0)|float %}
-          {% set stax = (order.s_tax or 0.0)|float %}
-          {% set sbdc = (order.s_bdc_omc or 0.0)|float %}
-          {% set total_debt = order.total_debt if order.total_debt is not none else (stax + sbdc) * q %}
-          <div class="row">
-            <div class="label">S‑Tax × Quantity</div>
-            <div class="value mono" id="taxTotal">GHS {{ '{:,.2f}'.format(stax * q) }}</div>
-          </div>
-          <div class="row">
-            <div class="label">S‑BDC × Quantity</div>
-            <div class="value mono" id="bdcTotal">GHS {{ '{:,.2f}'.format(sbdc * q) }}</div>
-          </div>
+          {% set per_l = (has_stax and has_sbdc) and (stax + sbdc) or (has_stax and stax) or (has_sbdc and sbdc) or 0.0 %}
+          {% set computed_debt = per_l * q %}
+          {% set total_debt = (order.total_debt is not none) and order.total_debt or computed_debt %}
+
+          {# === NEW: Show ONE line if both present (Combo); else show the available one === #}
+          {% if has_stax and has_sbdc %}
+            <div class="row">
+              <div class="label"></div>
+              <div class="value mono" id="comboTotal">GHS {{ '{:,.2f}'.format(per_l * q) }}</div>
+            </div>
+          {% elif has_stax %}
+            <div class="row">
+              <div class="label">S‑Tax × Quantity</div>
+              <div class="value mono" id="taxTotal">GHS {{ '{:,.2f}'.format(stax * q) }}</div>
+            </div>
+          {% elif has_sbdc %}
+            <div class="row">
+              <div class="label">S‑BDC × Quantity</div>
+              <div class="value mono" id="bdcTotal">GHS {{ '{:,.2f}'.format(sbdc * q) }}</div>
+            </div>
+          {% else %}
+            <div class="row">
+              <div class="label">Amount</div>
+              <div class="value mono" id="comboTotal">GHS 0.00</div>
+            </div>
+          {% endif %}
+
           <div class="row grand">
             <div class="label bold">Total Debt</div>
             <div class="value mono" id="grandTotal">GHS {{ '{:,.2f}'.format(total_debt) }}</div>
@@ -171,8 +208,7 @@
   <script>
     (function () {
       function val(id){const el=document.getElementById(id);return el?el.textContent.trim():"";}
-      // Create a readable multi-line text payload
-      const payloadLines = [
+      const lines = [
         "TrueType Services • Order Invoice",
         "--------------------------------",
         `Order ID: ${val('orderId')}`,
@@ -189,18 +225,28 @@
         `Driver Name: ${val('dname')}`,
         `Driver Phone: ${val('dphone')}`,
         `Quantity (L): ${val('qty')}`,
-        `Region: ${val('region')}`,
-        `S-Tax (GHS/L): ${val('stax')}`,
-        `S-BDC (GHS/L): ${val('sbdc')}`,
-        "",
-        `S-Tax × Qty: ${val('taxTotal')}`,
-        `S-BDC × Qty: ${val('bdcTotal')}`,
-        `Total Debt: ${val('grandTotal')}`
+        `Region: ${val('region')}`
       ];
-      const text = payloadLines.join("\n");
 
-      // Use a static QR image service to render the text (keeps template lightweight)
-      // You can swap to another provider or self-hosted QR later if preferred.
+      // Include whichever rate rows exist
+      const comboPerL = val('comboPerL');
+      const staxPerL  = val('stax');
+      const sbdcPerL  = val('sbdc');
+      if (comboPerL) lines.push(`combo price (GHS/L): ${comboPerL} `);
+      if (!comboPerL && staxPerL) lines.push(`Tax price (GHS/L): ${staxPerL}`);
+      if (!comboPerL && sbdcPerL) lines.push(`BDC price (GHS/L): ${sbdcPerL}`);
+
+      // Include whichever total rows exist
+      const comboTotal = val('comboTotal');
+      const taxTotal   = val('taxTotal');
+      const bdcTotal   = val('bdcTotal');
+      if (comboTotal) lines.push(`Combo × Qty: ${comboTotal}`);
+      if (taxTotal)   lines.push(`S-Tax × Qty: ${taxTotal}`);
+      if (bdcTotal)   lines.push(`S-BDC × Qty: ${bdcTotal}`);
+
+      lines.push(`Total Debt: ${val('grandTotal')}`);
+
+      const text = lines.join("\n");
       const url = "https://api.qrserver.com/v1/create-qr-code/?size=128x128&data=" + encodeURIComponent(text);
       const img = document.getElementById('qrImg');
       if (img) img.src = url;
