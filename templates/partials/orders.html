@@ -76,7 +76,7 @@
               data-region="{{ order.region or '' }}"
               data-date="{{ order.date or '' }}">
 
-          <!-- Order Type: read-only (chosen by client) -->
+          <!-- Order Type (read-only) -->
           <div class="col-12">
             <label class="form-label mb-1">Order Type</label>
             <div>
@@ -94,7 +94,6 @@
                 {% endif %}
               </small>
             </div>
-            <!-- Keep hidden input so backend receives the mode; normalized to underscores -->
             <input type="hidden" name="order_type" class="order_type" value="{{ mode }}">
           </div>
 
@@ -255,10 +254,9 @@
           <!-- ACTIONS -->
           <div class="col-12">
             <div class="actions-grid">
-             
               <button type="button" class="btn btn-outline-success send-omc-btn">Send to OMC (WhatsApp)</button>
               <button type="button" class="btn btn-outline-success send-bdc-btn">Send to BDC (WhatsApp)</button>
-               <button type="submit" class="btn btn-{{ 'success' if filled else 'primary' }}">
+              <button type="submit" class="btn btn-{{ 'success' if filled else 'primary' }}">
                 {{ 'Approve & Confirm' if filled else 'Confirm' }}
               </button>
             </div>
@@ -365,19 +363,19 @@
     if ($bdc.hasClass('select2-hidden-accessible')) $bdc.trigger('change.select2');
   }
 
-  // UI + requireds based on order type (read from hidden field)
+  // --- Lock/enable inputs by mode (AND clear disabled ones) ---
   function setModeUI($form, mode){
-    $form.find('.order_type').val(mode); // keep hidden in sync
+    $form.find('.order_type').val(mode);
 
     const $p  = $form.find('.p_bdc_input');
     const $s  = $form.find('.s_bdc_input');
     const $pt = $form.find('.p_tax_input');
     const $st = $form.find('.s_tax_input');
 
-    const on  = (el) => { el.prop('disabled', false).removeClass('dimmed'); };
-    const off = (el) => { el.prop('disabled', true).addClass('dimmed'); };
+    const on  = ($el) => { $el.prop('disabled', false).removeClass('dimmed'); };
+    const off = ($el) => { $el.val('').prop('disabled', true).addClass('dimmed'); }; // clear when disabling
 
-    [$p,$s,$pt,$st].forEach($el => $el.prop('required', false)); // reset
+    [$p,$s,$pt,$st].forEach($el => $el.prop('required', false)); // reset reqs
 
     if (mode === 's_tax'){
       off($p); off($s); on($pt); on($st);
@@ -482,7 +480,7 @@
     }
   }
 
-  // Events (no order-type toggles anymore)
+  // Recalc events
   $(document).on('input', '.p_bdc_input, .s_bdc_input, .p_tax_input, .s_tax_input', function(){
     const $form = $(this).closest('form');
     computeFormValues($form);
@@ -493,18 +491,34 @@
     computeFormValues($form);
   });
 
-  // Autofill price button
+  // --- Autofill strictly by order type rules ---
   $(document).on('click', '.fetch-price-btn', function () {
     const btn = $(this);
     const product = btn.data('product');
     const $form = btn.closest('form');
+    const mode = ($form.find('.order_type').val() || 'combo');
 
     $.get('/orders/get_product_price', { name: product })
       .done(function (res) {
-        if (res.p_price != null) $form.find('.p_bdc_input').val(res.p_price);
-        if (res.s_price != null) $form.find('.s_bdc_input').val(res.s_price);
-        if (res.p_tax   != null) $form.find('.p_tax_input').val(res.p_tax);
-        if (res.s_tax   != null) $form.find('.s_tax_input').val(res.s_tax);
+        const $p  = $form.find('.p_bdc_input');
+        const $s  = $form.find('.s_bdc_input');
+        const $pt = $form.find('.p_tax_input');
+        const $st = $form.find('.s_tax_input');
+
+        if (mode === 's_tax') {
+          // Only tax fields should fill
+          if (res.p_tax != null) $pt.val(res.p_tax);
+          if (res.s_tax != null) $st.val(res.s_tax);
+        } else if (mode === 's_bdc') {
+          // Only price fields should fill
+          if (res.p_price != null) $p.val(res.p_price);
+          if (res.s_price != null) $s.val(res.s_price);
+        } else { // combo
+          if (res.p_price != null) $p.val(res.p_price);
+          if (res.s_price != null) $s.val(res.s_price);
+          if (res.p_tax   != null) $pt.val(res.p_tax);
+          if (res.s_tax   != null) $st.val(res.s_tax);
+        }
         computeFormValues($form);
       })
       .fail(function (xhr) {
@@ -527,8 +541,8 @@
     $('.order-update-form').each(function(){
       const $form = $(this);
       const mode = $form.find('.order_type').val() || 'combo';
-      setModeUI($form, mode);     // disables/req fields appropriately
-      computeFormValues($form);   // fills derived numbers
+      setModeUI($form, mode);     // locks + clears disabled fields per mode
+      computeFormValues($form);   // derived numbers
     });
   });
 
