@@ -65,7 +65,7 @@
     </div>
     <div class="col-sm-6 col-lg-3">
       <div class="summary-card">
-        <h6>Unpaid S-Tax (Sum)</h6>
+        <h6>Unpaid P-Tax (Sum)</h6>
         <div class="big">GH₵ {{ total_unpaid_sum }}</div>
       </div>
     </div>
@@ -114,8 +114,8 @@
   <div class="card section-card mb-4">
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <h5 class="m-0"><i class="bi bi-exclamation-circle text-warning me-2"></i>Unpaid S-Tax Orders</h5>
-        <span class="text-muted small">Due = s-tax per L × quantity</span>
+        <h5 class="m-0"><i class="bi bi-exclamation-circle text-warning me-2"></i>Unpaid P-Tax Orders</h5>
+        <span class="text-muted small">Due = P-tax per L × quantity</span>
       </div>
 
       <div class="table-responsive">
@@ -161,7 +161,7 @@
             {% else %}
               <tr>
                 <td colspan="7" class="text-center text-muted py-4">
-                  <i class="bi bi-check2-circle me-1"></i>All S-Tax orders are paid. 🎉
+                  <i class="bi bi-check2-circle me-1"></i>All P-Tax orders are paid. 🎉
                 </td>
               </tr>
             {% endif %}
@@ -175,7 +175,7 @@
   <div class="card section-card">
     <div class="card-body">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-        <h5 class="m-0"><i class="bi bi-journal-check me-2"></i>Paid S-Tax</h5>
+        <h5 class="m-0"><i class="bi bi-journal-check me-2"></i>Paid P-Tax</h5>
         <div class="d-flex align-items-center gap-2">
           <div class="filter-chip">Current total (filtered): <strong>GH₵ {{ total_paid_sum }}</strong></div>
           <button id="exportPdfFiltered" type="button" class="btn btn-outline-danger btn-sm btn-icon">
@@ -356,7 +356,7 @@
     doc.text("TrueType Services", logo ? x + 90 : x, y);
     doc.setFont("Helvetica", "normal");
     doc.setFontSize(11);
-    let title = "S-Tax Payments Report";
+    let title = "P-Tax Payments Report";
     if (filterOMC) title += ` — ${filterOMC}`;
     if (titleSuffix) title += ` ${titleSuffix}`;
     doc.text(title, x, y + 18);
@@ -397,8 +397,8 @@
     doc.setFont("Helvetica", "bold");
     doc.text(`TOTAL: GH₵ ${toMoney(total)}`, pageWidth - 180, finalY + 24);
 
-    const filename = filterOMC ? `s_tax_paid_${filterOMC.replace(/\W+/g,'_').toLowerCase()}.pdf`
-                               : "s_tax_paid_filtered.pdf";
+    const filename = filterOMC ? `P_tax_paid_${filterOMC.replace(/\W+/g,'_').toLowerCase()}.pdf`
+                               : "P_tax_paid_filtered.pdf";
     doc.save(filename);
   }
 
@@ -535,7 +535,7 @@
   <div class="modal-dialog">
     <form id="pay-form" class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Record S-Tax Payment (Partial Allowed)</h5>
+        <h5 class="modal-title">Record P-Tax Payment (Partial Allowed)</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body row g-2">
@@ -609,3 +609,4 @@
 </div>
 </body>
 </html>
+ 
