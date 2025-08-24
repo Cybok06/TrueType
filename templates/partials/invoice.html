@@ -119,8 +119,7 @@
               {{ '{:,.0f}'.format((order.quantity or 0.0)|float) }}
             </td></tr>
             <tr><td class="k">Region</td><td class="v" id="region">{{ order.region or '—' }}</td></tr>
-            <tr><td class="k">S‑Tax (GHS/L)</td><td class="v mono" id="stax">{{ '{:,.2f}'.format(order.s_tax or 0) }}</td></tr>
-            <tr><td class="k">S‑BDC (GHS/L)</td><td class="v mono" id="sbdc">{{ '{:,.2f}'.format(order.s_bdc_omc or 0) }}</td></tr>
+            
           </tbody>
         </table>
       </div>
