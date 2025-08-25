@@ -33,13 +33,21 @@
             <small class="text-muted">{{ payment.client_id_str }}</small>
           </td>
           <td>{{ payment.phone }}</td>
-          <td><span class="fw-bold text-success">GHS {{ '%.2f'|format(payment.amount) }}</span></td>
-<td>
-  {{ payment.bank_name }}
-  {% if payment.account_last4 %}
-    <span class="text-muted">(****{{ payment.account_last4 }})</span>
-  {% endif %}
-</td>
+
+          <!-- Amount with thousand separators + raw number for export -->
+          <td>
+            <span class="fw-bold text-success amount"
+                  data-raw="{{ payment.amount or 0 }}">
+              GHS {{ "{:,.2f}".format(payment.amount or 0) }}
+            </span>
+          </td>
+
+          <td>
+            {{ payment.bank_name }}
+            {% if payment.account_last4 %}
+              <span class="text-muted">(****{{ payment.account_last4 }})</span>
+            {% endif %}
+          </td>
           <td class="text-center">
             {% if payment.status == 'confirmed' %}
               <span class="badge bg-success"><i class="fas fa-check-circle"></i> Confirmed</span>
@@ -106,7 +114,7 @@
   $('#searchInput').on('keyup', function () {
     const value = $(this).val().toLowerCase();
     $('#paymentsTable tr').each(function () {
-      const search = $(this).data('search');
+      const search = ($(this).data('search') || '').toString().toLowerCase();
       $(this).toggle(search.includes(value));
     });
   });
@@ -128,18 +136,61 @@
     $.post(`/confirm_payment/${paymentId}`, { feedback: feedback }, function (res) {
       if (res.success) {
         const row = $(`button[onclick="openConfirmModal('${paymentId}')"]`).closest("tr");
-        row.find(".text-center .badge").removeClass("bg-warning").addClass("bg-success").html('<i class="fas fa-check-circle"></i> Confirmed');
+        row.find(".text-center .badge")
+           .removeClass("bg-warning text-dark")
+           .addClass("bg-success")
+           .html('<i class="fas fa-check-circle"></i> Confirmed');
         row.find("td:last-child").html('<span class="text-success"><i class="fas fa-check-double"></i> Done</span>');
         bootstrap.Modal.getInstance(document.getElementById('confirmModal')).hide();
       } else {
-        alert("Error: " + res.error);
+        alert("Error: " + (res.error || 'Unknown error'));
       }
     });
   });
 
-  // Export to Excel
+  // Export to Excel (keeps 'Amount' numeric; applies number format)
   function exportToExcel() {
-    const wb = XLSX.utils.table_to_book(document.getElementById('paymentDataTable'), { sheet: "Payments" });
+    const rows = [];
+    // Header
+    rows.push(['Date','Client','Client ID','Phone','Amount (GHS)','Bank','Account Last4','Status','Proof URL']);
+
+    $('#paymentsTable tr').each(function () {
+      const $tds = $(this).children('td');
+
+      const date   = ($tds.eq(0).text() || '').trim();
+
+      const clientName = ($tds.eq(1).find('strong').text() || '').trim();
+      const clientId   = ($tds.eq(1).find('small').text() || '').trim();
+
+      const phone  = ($tds.eq(2).text() || '').trim();
+
+      const $amtEl = $tds.eq(3).find('.amount');
+      const amount = Number($amtEl.data('raw') || 0); // numeric for Excel
+
+      // Bank name and last4
+      const bankCell = $tds.eq(4).clone();
+      const last4 = (bankCell.find('span').text().match(/\*{4}(\d{4})/) || [,''])[1] || '';
+      bankCell.find('span').remove();
+      const bank = (bankCell.text() || '').trim();
+
+      const status = ($tds.eq(5).text() || '').trim();
+
+      const proof  = $tds.eq(6).find('a').attr('href') || '';
+
+      rows.push([date, clientName, clientId, phone, amount, bank, last4, status, proof]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+
+    // Apply number format to Amount column (index 4 -> column E)
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let r = 1; r <= range.e.r; r++) {
+      const addr = XLSX.utils.encode_cell({ r, c: 4 }); // E column
+      if (ws[addr]) { ws[addr].t = 'n'; ws[addr].z = '#,##0.00'; }
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Payments');
     XLSX.writeFile(wb, `Payments_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 </script>
