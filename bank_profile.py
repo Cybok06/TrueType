@@ -419,3 +419,140 @@ def bdc_debts(bank_id):
         return jsonify({"status":"success", "debts": rows})
     except Exception as e:
         return jsonify({"status":"error", "message": str(e)}), 500
+# ---------------- API: pay BDC from this bank (allocates oldest-first) ----------------
+@bank_profile_bp.route("/bank-profile/pay-bdc", methods=["POST"])
+def pay_bdc_from_bank():
+    try:
+        data = request.get_json(force=True)
+        bank_id = (data.get("bank_id") or "").strip()
+        bdc_id  = (data.get("bdc_id") or "").strip()
+        amount  = _f(data.get("amount"))
+        ref     = (data.get("reference") or "").strip()
+        paid_by = (data.get("paid_by") or "").strip()
+        date_s  = (data.get("payment_date") or "").strip()
+
+        # ---- validation ----
+        if not bank_id or not ObjectId.is_valid(bank_id):
+            return jsonify({"status":"error", "message":"Invalid bank id"}), 400
+        if not bdc_id or not ObjectId.is_valid(bdc_id):
+            return jsonify({"status":"error", "message":"Invalid BDC id"}), 400
+        if amount <= 0:
+            return jsonify({"status":"error", "message":"Amount must be greater than 0"}), 400
+
+        pay_dt = datetime.utcnow()
+        if date_s:
+            try:
+                pay_dt = datetime.strptime(date_s, "%Y-%m-%d")
+            except ValueError:
+                return jsonify({"status":"error", "message":"Invalid payment date"}), 400
+
+        bdc_oid = ObjectId(bdc_id)
+        bank_oid = ObjectId(bank_id)
+
+        # ---- compute total outstanding for this BDC (cash/credit/from account) ----
+        debt_pipe = [
+            {"$match": {
+                "$or": [
+                    {"payment_type": {"$regex": r"^cash$", "$options": "i"}},
+                    {"payment_type": {"$regex": r"^credit$", "$options": "i"}},
+                    {"payment_type": {"$regex": r"^from\s*account$", "$options": "i"}},
+                ],
+                "$or": [
+                    {"bdc_id": bdc_oid},
+                    # some docs store bdc_id on joined order; we already normalized via bdc_debts, but be defensive:
+                ]
+            }},
+            {"$addFields": {
+                "amount_d": {"$toDouble": "$amount"},
+                "paid_d": {"$toDouble": {"$ifNull": ["$bank_paid_total", 0]}},
+            }},
+            {"$addFields": {"remain": {"$subtract": ["$amount_d", "$paid_d"]}}},
+            {"$match": {"remain": {"$gt": 0}}},
+            {"$group": {"_id": None, "total_outstanding": {"$sum": "$remain"}}}
+        ]
+        row = next(sbdc_col.aggregate(debt_pipe), None)
+        total_outstanding = float(row["total_outstanding"]) if row else 0.0
+
+        if total_outstanding <= 0:
+            return jsonify({"status":"error", "message":"No outstanding BDC items for this BDC"}), 400
+        if amount > total_outstanding + 0.005:
+            return jsonify({"status":"error", "message": f"Amount exceeds BDC outstanding (GHS {_fmt2(total_outstanding)})"}), 400
+
+        # ---- fetch unpaid items oldest-first to allocate against ----
+        # We prefer a stable "date" field; fallback to _id time if missing.
+        items = list(sbdc_col.aggregate([
+            {"$match": {
+                "$or": [
+                    {"payment_type": {"$regex": r"^cash$", "$options": "i"}},
+                    {"payment_type": {"$regex": r"^credit$", "$options": "i"}},
+                    {"payment_type": {"$regex": r"^from\s*account$", "$options": "i"}},
+                ],
+                "bdc_id": bdc_oid
+            }},
+            {"$addFields": {
+                "amount_d": {"$toDouble": "$amount"},
+                "paid_d": {"$toDouble": {"$ifNull": ["$bank_paid_total", 0]}},
+                "sort_dt": {"$ifNull": ["$date", {"$toDate": "$_id"}]}
+            }},
+            {"$addFields": {"remain": {"$subtract": ["$amount_d", "$paid_d"]}}},
+            {"$match": {"remain": {"$gt": 0}}},
+            {"$sort": {"sort_dt": 1}}
+        ]))
+
+        left = round(amount, 2)
+        allocated = []
+
+        for it in items:
+            if left <= 0:
+                break
+            portion = min(left, float(it["remain"]))
+            portion = round(portion, 2)
+
+            # push to history & increment totals atomically
+            upd = sbdc_col.update_one(
+                {"._id": it["_id"]} if False else {"_id": it["_id"]},
+                {
+                    "$push": {"bank_paid_history": {
+                        "bank_id": bank_oid,
+                        "amount": portion,
+                        "date": pay_dt,
+                        "reference": ref or None,
+                        "paid_by": paid_by or None
+                    }},
+                    "$inc": {"bank_paid_total": portion},
+                    "$set": {"bank_paid_last_at": pay_dt}
+                }
+            )
+
+            # compute remaining after this allocation
+            new_doc = sbdc_col.find_one({"_id": it["_id"]}, {"amount":1, "bank_paid_total":1, "order_id":1, "payment_type":1})
+            amt_d = _f(new_doc.get("amount"))
+            bank_paid_total = _f(new_doc.get("bank_paid_total"))
+            remaining_after = max(0.0, round(amt_d - bank_paid_total, 2))
+
+            # try to surface the order code if present
+            order_code = new_doc.get("order_id")
+            if isinstance(order_code, ObjectId):
+                # if order_id is an OID, try to look up readable code
+                ord_doc = orders_col.find_one({"_id": order_code}, {"order_id":1})
+                order_code = ord_doc.get("order_id") if ord_doc else str(order_code)
+
+            allocated.append({
+                "sbdc_oid": str(it["_id"]),
+                "order_id": str(order_code) if order_code else None,
+                "payment_type": (new_doc.get("payment_type") or "").title(),
+                "applied": portion,
+                "remaining_after": remaining_after
+            })
+
+            left = round(left - portion, 2)
+
+        return jsonify({
+            "status": "success",
+            "bdc_id": bdc_id,
+            "amount": round(amount, 2),
+            "allocated": allocated
+        })
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
