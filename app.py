@@ -25,6 +25,9 @@ from admin_truck_payments import admin_truck_payments_bp  # ✅ NEW
 from share_links import shared_bp
 from omc import omc_bp
 from order_cancellation import cancel_bp
+# app.py
+from navbar import navbar_bp
+
 
 
 
@@ -75,7 +78,9 @@ app.register_blueprint(bank_profile_bp)  # ✅ Register bank profile route
 app.register_blueprint(reports_bp)
 app.register_blueprint(shared_bp)
 app.register_blueprint(omc_bp)
-app.register_blueprint(cancel_bp, url_prefix="")      # ✅ routes: /orders/cancel/...
+app.register_blueprint(cancel_bp, url_prefix="") 
+app.register_blueprint(navbar_bp)
+     # ✅ routes: /orders/cancel/...
 
 
 
