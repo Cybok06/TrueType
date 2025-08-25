@@ -60,7 +60,6 @@
     .confetti > i{
       position:absolute; width:10px; height:14px; border-radius:2px;
       animation: fall 1.6s ease-in forwards;
-      /* randomized via JS */
     }
     @keyframes fall{
       0%{ transform: translate(var(--x,0), -30px) rotate(0deg); opacity:1 }
@@ -247,7 +246,39 @@
   </div>
 </div>
 
-<!-- Confirmation Modal -->
+<!-- Duplicate-warning Modal: “Send again?” -->
+<div class="modal fade" id="dupWarnModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-warning-subtle">
+        <h5 class="modal-title">
+          <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>
+          Payment already submitted
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">
+          You already submitted a payment for this order that is <strong>not confirmed</strong> yet.
+        </p>
+        <div class="border rounded p-2 mb-2">
+          <div class="small text-muted mb-1">Last pending payment</div>
+          <div><strong>Amount:</strong> <span id="dupLastAmount">—</span></div>
+          <div><strong>Date:</strong> <span id="dupLastDate">—</span></div>
+        </div>
+        <p class="mb-0">Do you want to <strong>send another payment</strong> for this order now?</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">No, cancel</button>
+        <button type="button" class="btn btn-danger" id="dupConfirmBtn">
+          <i class="bi bi-arrow-repeat me-1"></i> Send again
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Success Confirmation Modal -->
 <div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0">
@@ -346,11 +377,12 @@
   });
 </script>
 
-<!-- Form UX, spinner + confirmation modal (with confetti) -->
+<!-- Form UX, duplicate check, spinner + confirmation modal -->
 <script>
   // Toggle order/truck input
   const paymentType = document.getElementById('payment_type');
   const orderField  = document.getElementById('order_field');
+  const orderSelect = document.getElementById('order_id');
   const truckField  = document.getElementById('truck_field'); // optional
 
   paymentType.addEventListener('change', () => {
@@ -367,8 +399,7 @@
     }
   });
 
-  // Build outstanding map from DOM
-  const orderSelect   = document.getElementById('order_id');
+  // Outstanding helpers
   const amountInput   = document.getElementById('amount');
   const fullPayBtn    = document.getElementById('fullPayBtn');
   const fullTotalText = document.getElementById('fullTotalText');
@@ -414,7 +445,7 @@
     });
   }
 
-  // Submit UX + progressive enhancement
+  // Submit UX
   const form = document.getElementById('paymentForm');
   const submitBtn = document.getElementById('submitBtn');
   const btnText = submitBtn.querySelector('.btn-text');
@@ -467,58 +498,123 @@
     const modal = new bootstrap.Modal(document.getElementById('confirmModal'), { backdrop:'static' });
     modal.show();
 
-    // blast confetti a beat after open
     setTimeout(()=> fireConfetti('confettiHost'), 120);
   }
 
-  form.addEventListener('submit', async (e)=>{
-    e.preventDefault();
-
-    // quick client checks
-    if(!proofUrlInput.value){
-      showToast('Please upload your payment proof first.','warning');
-      return;
-    }
-
-    setSubmitting(true);
-    const fd = new FormData(form);
-    const action = form.getAttribute('action') || window.location.pathname;
-
+  // Duplicate pre-check — calls backend if available
+  async function checkPendingDuplicate(orderId){
     try{
-      // Prefer JSON response to stay on page
+      if(!orderId) return { has_pending:false };
+      const r = await fetch(`/payment/check-pending?order_id=${encodeURIComponent(orderId)}`, {
+        headers: { 'Accept':'application/json' }
+      });
+      if(!r.ok) return { has_pending:false, unknown:true };
+      const d = await r.json();
+      // expected shape: { has_pending: bool, last_amount: number, last_date: 'YYYY-MM-DD HH:mm:ss' }
+      return d || { has_pending:false };
+    }catch(e){
+      return { has_pending:false, unknown:true };
+    }
+  }
+
+  // Duplicate warning modal wiring
+  const dupWarnModalEl = document.getElementById('dupWarnModal');
+  const dupWarnModal = new bootstrap.Modal(dupWarnModalEl);
+  const dupLastAmountEl = document.getElementById('dupLastAmount');
+  const dupLastDateEl = document.getElementById('dupLastDate');
+  const dupConfirmBtn = document.getElementById('dupConfirmBtn');
+
+  let dupProceedResolver = null; // promise resolver for modal decision
+
+  dupConfirmBtn.addEventListener('click', ()=>{
+    dupWarnModal.hide();
+    if(dupProceedResolver) dupProceedResolver(true);
+  });
+  dupWarnModalEl.addEventListener('hidden.bs.modal', ()=>{
+    if(dupProceedResolver) dupProceedResolver(false);
+  });
+
+  function askSendAgain(last){
+    dupLastAmountEl.textContent = last?.last_amount != null ? ('GHS ' + formatMoney(last.last_amount)) : '—';
+    dupLastDateEl.textContent   = last?.last_date || '—';
+    dupWarnModal.show();
+    return new Promise((resolve)=> { dupProceedResolver = resolve; });
+  }
+
+  // Actual submit (AJAX-first, fallback to normal submit)
+  async function doSubmit(fd){
+    const action = form.getAttribute('action') || window.location.pathname;
+    setSubmitting(true);
+    try{
       const res = await fetch(action, { method:'POST', body: fd, headers: { 'Accept': 'application/json' } });
       const ct = res.headers.get('content-type') || '';
       if(res.ok && ct.includes('application/json')){
         const data = await res.json();
-        // Expecting {status:'success', ...} or similar; be tolerant
         if((data.status||'').toLowerCase()==='success' || res.status===200){
-          // Fill and show modal
           const amount = fd.get('amount') || 0;
           const type   = fd.get('payment_type') || '';
           const bank   = fd.get('bank_name') || '';
           setSubmitting(false);
           openConfirmModal(amount, type, bank);
-          // Optional: reset form lightly
           form.reset();
           previewImage.classList.add('d-none');
           uploadStatus.textContent = '';
           proofUrlInput.value = '';
           return;
-        }else{
+        } else if ((data.status||'').toLowerCase()==='warning' && data.reason==='duplicate_pending'){
+          // optional: if backend returns explicit warning JSON
+          setSubmitting(false);
+          const go = await askSendAgain({ last_amount:data.last_amount, last_date:data.last_date });
+          if(go){
+            // append a hint for backend if you want (optional)
+            fd.append('force_duplicate', '1');
+            return doSubmit(fd);
+          } else {
+            return;
+          }
+        } else {
           throw new Error(data.message || 'Submission failed');
         }
       }
-
-      // Fallback: non-JSON server — submit the old-fashioned way
-      form.removeEventListener('submit', arguments.callee);
+      // Fallback to full post if not JSON
+      form.removeEventListener('submit', onSubmitHandler);
       form.submit();
-
     }catch(err){
       console.error(err);
       setSubmitting(false);
       showToast(err.message || 'Network error. Please try again.');
     }
-  });
+  }
+
+  // Main submit handler with duplicate pre-check
+  async function onSubmitHandler(e){
+    e.preventDefault();
+
+    if(!proofUrlInput.value){
+      showToast('Please upload your payment proof first.','warning');
+      return;
+    }
+
+    const fd = new FormData(form);
+
+    // Only pre-check duplicates for order payments
+    const type = (fd.get('payment_type') || '').toLowerCase();
+    const orderId = fd.get('order_id');
+
+    if(type === 'order' && orderId){
+      // Ask backend if there is a pending payment for this order
+      const info = await checkPendingDuplicate(orderId);
+      if(info.has_pending){
+        // show confirm modal
+        const go = await askSendAgain(info);
+        if(!go) return; // user cancelled
+      }
+    }
+
+    await doSubmit(fd);
+  }
+
+  form.addEventListener('submit', onSubmitHandler);
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
