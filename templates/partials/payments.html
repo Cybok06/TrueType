@@ -1,13 +1,26 @@
 <div class="container py-4">
   <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
     <h4 class="mb-0"><i class="fas fa-money-check-alt me-2 text-primary"></i>Received Payments</h4>
-    <button class="btn btn-success btn-sm" onclick="exportToExcel()">
-      <i class="fas fa-file-excel me-1"></i> Export to Excel
-    </button>
+
+    <div class="d-flex align-items-center gap-2">
+      <!-- Search (server-side) -->
+      <form class="d-flex" method="get" action="{{ url_for('payments_bp.view_payments') }}">
+        <input name="q" value="{{ q or '' }}" type="text" class="form-control form-control-sm shadow-sm"
+               placeholder="🔍 Search by client name, phone or ID" style="min-width: 260px;">
+        <input type="hidden" name="page" value="1">
+        <button class="btn btn-sm btn-outline-primary ms-2" type="submit"><i class="fas fa-search"></i></button>
+      </form>
+
+      <button class="btn btn-success btn-sm" onclick="exportToExcel()">
+        <i class="fas fa-file-excel me-1"></i> Export to Excel
+      </button>
+    </div>
   </div>
 
-  <div class="mb-3">
-    <input type="text" id="searchInput" class="form-control shadow-sm" placeholder="🔍 Search by client name, phone or ID">
+  <!-- Results meta -->
+  <div class="small text-muted mb-2">
+    Showing <strong>{{ start_idx }}</strong>–<strong>{{ end_idx }}</strong> of <strong>{{ total_count }}</strong>
+    {% if q %} for “{{ q }}”{% endif %}.
   </div>
 
   <div class="table-responsive">
@@ -26,8 +39,8 @@
       </thead>
       <tbody id="paymentsTable">
         {% for payment in payments %}
-        <tr data-search="{{ payment.client_name|lower }} {{ payment.client_id_str|lower }} {{ payment.phone }}">
-          <td>{{ payment.date }}</td>
+        <tr>
+          <td>{{ payment.date_str }}</td>
           <td>
             <strong>{{ payment.client_name }}</strong><br>
             <small class="text-muted">{{ payment.client_id_str }}</small>
@@ -48,6 +61,7 @@
               <span class="text-muted">(****{{ payment.account_last4 }})</span>
             {% endif %}
           </td>
+
           <td class="text-center">
             {% if payment.status == 'confirmed' %}
               <span class="badge bg-success"><i class="fas fa-check-circle"></i> Confirmed</span>
@@ -55,11 +69,17 @@
               <span class="badge bg-warning text-dark"><i class="fas fa-hourglass-half"></i> Pending</span>
             {% endif %}
           </td>
+
           <td class="text-center">
-            <a href="{{ payment.proof_url }}" target="_blank" class="btn btn-outline-secondary btn-sm">
-              <i class="fas fa-eye"></i> View
-            </a>
+            {% if payment.proof_url and payment.proof_url != '#' %}
+              <a href="{{ payment.proof_url }}" target="_blank" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-eye"></i> View
+              </a>
+            {% else %}
+              <span class="text-muted">None</span>
+            {% endif %}
           </td>
+
           <td class="text-center">
             {% if payment.status != 'confirmed' %}
               <button class="btn btn-primary btn-sm" onclick="openConfirmModal('{{ payment._id }}')">
@@ -74,6 +94,48 @@
       </tbody>
     </table>
   </div>
+
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <nav aria-label="Payments pagination" class="mt-3">
+    <ul class="pagination pagination-sm justify-content-end flex-wrap">
+      <!-- First -->
+      <li class="page-item {% if page == 1 %}disabled{% endif %}">
+        <a class="page-link" href="{{ url_for('payments_bp.view_payments', page=1, q=q) }}">&laquo; First</a>
+      </li>
+      <!-- Prev -->
+      <li class="page-item {% if page == 1 %}disabled{% endif %}">
+        <a class="page-link" href="{{ url_for('payments_bp.view_payments', page=page-1 if page>1 else 1, q=q) }}">Prev</a>
+      </li>
+
+      <!-- Window -->
+      {% if show_first_ellipsis %}
+        <li class="page-item"><a class="page-link" href="{{ url_for('payments_bp.view_payments', page=1, q=q) }}">1</a></li>
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+      {% endif %}
+
+      {% for pnum in page_window %}
+        <li class="page-item {% if pnum == page %}active{% endif %}">
+          <a class="page-link" href="{{ url_for('payments_bp.view_payments', page=pnum, q=q) }}">{{ pnum }}</a>
+        </li>
+      {% endfor %}
+
+      {% if show_last_ellipsis %}
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+        <li class="page-item"><a class="page-link" href="{{ url_for('payments_bp.view_payments', page=total_pages, q=q) }}">{{ total_pages }}</a></li>
+      {% endif %}
+
+      <!-- Next -->
+      <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+        <a class="page-link" href="{{ url_for('payments_bp.view_payments', page=page+1 if page<total_pages else total_pages, q=q) }}">Next</a>
+      </li>
+      <!-- Last -->
+      <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+        <a class="page-link" href="{{ url_for('payments_bp.view_payments', page=total_pages, q=q) }}">Last &raquo;</a>
+      </li>
+    </ul>
+  </nav>
+  {% endif %}
 </div>
 
 <!-- Confirm Modal -->
@@ -110,87 +172,89 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script>
-  // Search filter
-  $('#searchInput').on('keyup', function () {
-    const value = $(this).val().toLowerCase();
-    $('#paymentsTable tr').each(function () {
-      const search = ($(this).data('search') || '').toString().toLowerCase();
-      $(this).toggle(search.includes(value));
-    });
-  });
-
   // Open modal
   function openConfirmModal(paymentId) {
-    $('#modalPaymentId').val(paymentId);
-    $('#feedback').val('');
+    document.getElementById('modalPaymentId').value = paymentId;
+    document.getElementById('feedback').value = '';
     const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
     modal.show();
   }
 
-  // Submit modal confirmation
-  $('#confirmForm').submit(function (e) {
+  // Submit modal confirmation (AJAX)
+  document.getElementById('confirmForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    const paymentId = $('#modalPaymentId').val();
-    const feedback = $('#feedback').val();
+    const paymentId = document.getElementById('modalPaymentId').value;
+    const feedback  = document.getElementById('feedback').value;
 
-    $.post(`/confirm_payment/${paymentId}`, { feedback: feedback }, function (res) {
+    fetch(`/confirm_payment/${paymentId}`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+      body: new URLSearchParams({feedback})
+    })
+    .then(r => r.json())
+    .then(res => {
       if (res.success) {
-        const row = $(`button[onclick="openConfirmModal('${paymentId}')"]`).closest("tr");
-        row.find(".text-center .badge")
-           .removeClass("bg-warning text-dark")
-           .addClass("bg-success")
-           .html('<i class="fas fa-check-circle"></i> Confirmed');
-        row.find("td:last-child").html('<span class="text-success"><i class="fas fa-check-double"></i> Done</span>');
+        // update row UI
+        const btn = document.querySelector(`button[onclick="openConfirmModal('${paymentId}')"]`);
+        if(btn){
+          const row = btn.closest('tr');
+          const statusCell = row.querySelector('td:nth-child(6)');
+          const actionCell = row.querySelector('td:nth-child(8)');
+          if(statusCell){
+            statusCell.innerHTML = '<span class="badge bg-success"><i class="fas fa-check-circle"></i> Confirmed</span>';
+          }
+          if(actionCell){
+            actionCell.innerHTML = '<span class="text-muted"><i class="fas fa-check-double"></i> Done</span>';
+          }
+        }
         bootstrap.Modal.getInstance(document.getElementById('confirmModal')).hide();
       } else {
         alert("Error: " + (res.error || 'Unknown error'));
       }
-    });
+    })
+    .catch(() => alert('Network error. Please try again.'));
   });
 
-  // Export to Excel (keeps 'Amount' numeric; applies number format)
+  // Export to Excel (current page)
   function exportToExcel() {
     const rows = [];
-    // Header
     rows.push(['Date','Client','Client ID','Phone','Amount (GHS)','Bank','Account Last4','Status','Proof URL']);
 
-    $('#paymentsTable tr').each(function () {
-      const $tds = $(this).children('td');
+    document.querySelectorAll('#paymentsTable tr').forEach(tr => {
+      const tds = tr.querySelectorAll('td');
+      const date = (tds[0]?.textContent || '').trim();
 
-      const date   = ($tds.eq(0).text() || '').trim();
+      const clientName = (tds[1]?.querySelector('strong')?.textContent || '').trim();
+      const clientId   = (tds[1]?.querySelector('small')?.textContent || '').trim();
 
-      const clientName = ($tds.eq(1).find('strong').text() || '').trim();
-      const clientId   = ($tds.eq(1).find('small').text() || '').trim();
+      const phone = (tds[2]?.textContent || '').trim();
 
-      const phone  = ($tds.eq(2).text() || '').trim();
+      const amtEl = tds[3]?.querySelector('.amount');
+      const amount = Number(amtEl?.dataset.raw || 0);
 
-      const $amtEl = $tds.eq(3).find('.amount');
-      const amount = Number($amtEl.data('raw') || 0); // numeric for Excel
+      const bankCell = tds[4]?.cloneNode(true);
+      let last4 = '';
+      let bank = '';
+      if (bankCell) {
+        const m = bankCell.textContent.match(/\*{4}(\d{4})/);
+        if (m) last4 = m[1];
+        bank = bankCell.textContent.replace(/\(.*\)$/, '').trim();
+      }
 
-      // Bank name and last4
-      const bankCell = $tds.eq(4).clone();
-      const last4 = (bankCell.find('span').text().match(/\*{4}(\d{4})/) || [,''])[1] || '';
-      bankCell.find('span').remove();
-      const bank = (bankCell.text() || '').trim();
-
-      const status = ($tds.eq(5).text() || '').trim();
-
-      const proof  = $tds.eq(6).find('a').attr('href') || '';
+      const status = (tds[5]?.textContent || '').trim();
+      const proof  = tds[6]?.querySelector('a')?.getAttribute('href') || '';
 
       rows.push([date, clientName, clientId, phone, amount, bank, last4, status, proof]);
     });
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
-
-    // Apply number format to Amount column (index 4 -> column E)
     const range = XLSX.utils.decode_range(ws['!ref']);
     for (let r = 1; r <= range.e.r; r++) {
       const addr = XLSX.utils.encode_cell({ r, c: 4 }); // E column
       if (ws[addr]) { ws[addr].t = 'n'; ws[addr].z = '#,##0.00'; }
     }
-
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Payments');
-    XLSX.writeFile(wb, `Payments_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `Payments_Page{{ page }}_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 </script>
