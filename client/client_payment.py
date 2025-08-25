@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, session, url_for, flash
 from db import db
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson import ObjectId
 import os
 import requests
@@ -17,6 +17,7 @@ clients_col         = db["clients"]  # <-- for client details
 # ───────────────────────── Config ─────────────────────────
 ARKESEL_API_KEY = os.getenv("ARKESEL_API_KEY", "c1JKV21keG1DdnJZQW1zc2JpVks")
 ADMIN_NOTIFY_MSISDN = "0277336609"  # destination for notifications
+DUP_CONFIRM_TTL_MIN = 10            # user can confirm by re-submitting within this window
 
 # ───────────────────── Helper functions ───────────────────
 def _to_f(x):
@@ -90,6 +91,40 @@ def _build_admin_payment_sms(*, receipt_ref: str, payment_type: str, amount: flo
         f"Time: {created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC"
     )
 
+def _latest_unconfirmed_payment(client_id_val, order_oid: ObjectId):
+    """
+    Return the most recent unconfirmed payment document for this client+order
+    (status != 'confirmed'), or None if none exist.
+    """
+    return payments_col.find_one(
+        {
+            "client_id": client_id_val,
+            "order_id": order_oid,
+            "status": {"$ne": "confirmed"},
+        },
+        sort=[("date", -1)]
+    )
+
+def _dup_confirm_ready(order_oid_str: str) -> bool:
+    """
+    Has the user already seen the duplicate warning for this order recently?
+    If yes (within TTL), allow the next POST to pass as a confirmed resubmission.
+    """
+    store = session.get("dup_confirm_store") or {}
+    slot = store.get(order_oid_str)
+    if not slot:
+        return False
+    try:
+        ts = datetime.fromisoformat(slot.get("ts"))
+    except Exception:
+        return False
+    return (datetime.utcnow() - ts) <= timedelta(minutes=DUP_CONFIRM_TTL_MIN)
+
+def _remember_dup_warning(order_oid_str: str):
+    store = session.get("dup_confirm_store") or {}
+    store[order_oid_str] = {"ts": datetime.utcnow().isoformat()}
+    session["dup_confirm_store"] = store
+
 # ───────────────────────── Route ──────────────────────────
 @client_payment_bp.route("/payment", methods=["GET", "POST"])
 def client_payment():
@@ -144,7 +179,7 @@ def client_payment():
 
         try:
             if payment_type == "truck":
-                # Insert truck payment
+                # Insert truck payment (no duplicate guard for trucks)
                 ins = truck_payments_col.insert_one(payment_base)
                 receipt_ref = f"PMT-{str(ins.inserted_id)[-6:].upper()}"
                 # Build SMS for admin
@@ -179,6 +214,24 @@ def client_payment():
                     flash("⚠ Selected order not found for your account.", "danger")
                     return redirect(url_for("client_payment.client_payment"))
 
+                # Duplicate-payment guard: is there any unconfirmed payment already?
+                existing = _latest_unconfirmed_payment(client_for_payments, sel_oid)
+                order_oid_str = str(sel_oid)
+                if existing and not _dup_confirm_ready(order_oid_str):
+                    # ask for confirmation (no insert yet)
+                    last_amt = _fmt_amt(existing.get("amount", 0))
+                    last_dt  = existing.get("date")
+                    last_dt_str = last_dt.strftime("%Y-%m-%d %H:%M:%S") if isinstance(last_dt, datetime) else str(last_dt or "")
+                    flash(
+                        f"⚠ You already submitted a payment for this order that is not confirmed yet "
+                        f"(GHS {last_amt} on {last_dt_str}). "
+                        f"If you really want to send another payment for the same order, submit again within "
+                        f"{DUP_CONFIRM_TTL_MIN} minutes to confirm.",
+                        "warning"
+                    )
+                    _remember_dup_warning(order_oid_str)
+                    return redirect(url_for("client_payment.client_payment"))
+
                 # Human-friendly order code (fallback to ObjectId)
                 order_code = owned.get("order_id") or str(owned["_id"])
 
@@ -206,6 +259,15 @@ def client_payment():
                 )
                 _send_sms(ADMIN_NOTIFY_MSISDN, sms_text)
 
+                # clear confirmation latch for this order (avoid open-ended confirmations)
+                store = session.get("dup_confirm_store") or {}
+                if order_oid_str in store:
+                    try:
+                        del store[order_oid_str]
+                        session["dup_confirm_store"] = store
+                    except Exception:
+                        pass
+
                 flash("✅ Payment submitted successfully!", "success")
 
         except Exception as e:
@@ -213,9 +275,7 @@ def client_payment():
 
         return redirect(url_for("client_payment.client_payment"))
 
-    # -------------------------
-    # GET: Build “orders with debt”
-    # -------------------------
+    # ------------------------- GET: Build “orders with debt” -------------------------
     orders = list(
         orders_col.find({"client_id": client_match}).sort("date", -1)
     )
@@ -302,4 +362,3 @@ def client_payment():
         order_balance_map=order_balance_map,
         bank_accounts=bank_accounts
     )
-
