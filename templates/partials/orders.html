@@ -88,9 +88,9 @@
                 {{ mode_label }}
               </span>
               <small class="calc-note ms-2">
-                {% if mode=='s_tax' %}Debt = S‑Tax × Q
-                {% elif mode=='s_bdc' %}Debt = S‑BDC × Q
-                {% else %}Debt = (S‑BDC + S‑Tax) × Q
+                {% if mode=='s_tax' %}Debt = S-Tax × Q
+                {% elif mode=='s_bdc' %}Debt = S-BDC × Q
+                {% else %}Debt = (S-BDC + S-Tax) × Q
                 {% endif %}
               </small>
             </div>
@@ -246,9 +246,14 @@
             </div>
           </div>
 
+          <!-- Due Date (past dates blocked) -->
           <div class="col-12 col-md-6 col-lg-4">
             <label class="form-label">Due Date</label>
-            <input type="date" name="due_date" class="form-control" value="{{ order.due_date.strftime('%Y-%m-%d') if order.due_date else '' }}">
+            <input type="date"
+                   name="due_date"
+                   class="form-control due_date_input"
+                   value="{{ order.due_date.strftime('%Y-%m-%d') if order.due_date else '' }}">
+            <div class="form-text text-muted">Only today or future dates are allowed.</div>
           </div>
 
           <!-- ACTIONS -->
@@ -527,6 +532,36 @@
       });
   });
 
+  // ---- DUE DATE: block past dates (allow today or future only) ----
+  function localISODate(d){
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function applyDueDateGuards(){
+    const todayStr = localISODate(new Date());
+    $('.due_date_input').each(function(){
+      // set min
+      this.min = todayStr;
+
+      // auto-correct if prefilled past date
+      if (this.value && this.value < todayStr){
+        this.value = todayStr;
+      }
+
+      // live validation (covers manual typing)
+      this.addEventListener('input', function(){
+        if (this.value && this.value < todayStr){
+          this.setCustomValidity('Due date cannot be in the past. Choose today or a future date.');
+        } else {
+          this.setCustomValidity('');
+        }
+      });
+    });
+  }
+
   // Init select2 + initial compute & UI lock based on order_type
   $(document).ready(function () {
     $('.omc-select, .bdc-select').each(function () {
@@ -544,12 +579,28 @@
       setModeUI($form, mode);     // locks + clears disabled fields per mode
       computeFormValues($form);   // derived numbers
     });
+
+    applyDueDateGuards();
   });
 
-  // Submit (Confirm)
+  // Submit (Confirm) + final due date check
   $(document).on('submit', '.order-update-form', function (e) {
-    e.preventDefault();
     const $form = $(this);
+    const $due = $form.find('.due_date_input');
+    if ($due.length){
+      const todayStr = localISODate(new Date());
+      const val = $due.val();
+      if (val && val < todayStr){
+        e.preventDefault();
+        $due[0].setCustomValidity('Due date cannot be in the past. Choose today or a future date.');
+        $due[0].reportValidity();
+        return;
+      } else {
+        $due[0].setCustomValidity('');
+      }
+    }
+
+    e.preventDefault();
     $.post(`/orders/update/${$form.data('id')}`, $form.serialize())
       .done(function (res) {
         if (res.approved && res.invoice_url) {
