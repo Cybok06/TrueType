@@ -7,7 +7,7 @@ from db import db
 shareholders_bp = Blueprint('shareholders', __name__, template_folder='templates')
 
 orders_col = db['orders']
-shared_tax_col = db['shared_tax']  # NEW: where manual tax rates are stored
+shared_tax_col = db['shared_tax']  # manual tax rates storage
 
 # ---------------------
 # Config
@@ -33,9 +33,18 @@ def _today_utc():
     return datetime(now.year, now.month, now.day)
 
 
+def _is_neutral_shareholder(val) -> bool:
+    """Case-insensitive Neutral check."""
+    try:
+        return str(val).strip().lower() == "neutral"
+    except Exception:
+        return False
+
+
 def _order_total_returns(o):
     """
     Use new 'total_returns' if present, else 'returns_total', else fallback margin*qty.
+    NOTE: This returns the numeric value ONLY; callers decide whether to include/exclude based on shareholder.
     """
     if o.get("total_returns") is not None:
         return _f(o.get("total_returns"))
@@ -57,7 +66,7 @@ def distinct_products():
     return sorted([p for p in prods if isinstance(p, str) and p.strip()])
 
 # ---------------------
-# Existing summary blocks
+# Existing summary blocks (with Neutral returns excluded)
 # ---------------------
 def filter_orders_for_returns(period, start_date, end_date):
     now = datetime.utcnow()
@@ -81,24 +90,32 @@ def filter_orders_for_returns(period, start_date, end_date):
 
 
 def build_contributions(orders):
-    total_orders = len(orders)
+    """Totals and per-shareholder contributions. Neutral *returns* are excluded from all totals and percentages.
+    Order and quantity counts continue to include only named shareholders listed in SHAREHOLDERS.
+    """
+    # Compute totals excluding Neutral returns
+    eligible_orders = [o for o in orders if not _is_neutral_shareholder(o.get("shareholder"))]
+
+    total_orders = len(orders)  # unchanged: overall approved orders in period
     total_quantity = sum(_f(order.get("quantity")) for order in orders)
-    total_returns = round(sum(_order_total_returns(order) for order in orders), 2)
+    total_returns = round(sum(_order_total_returns(order) for order in eligible_orders), 2)
 
     contributions = {name: {"orders": 0, "quantity": 0, "returns": 0.0} for name in SHAREHOLDERS}
-    for order in orders:
+    for order in eligible_orders:
         name = order.get("shareholder")
+        if name not in contributions:
+            continue  # ignore unknown shareholders and Neutral
         qty = _f(order.get("quantity"))
         ret = _order_total_returns(order)
-        if name in contributions:
-            contributions[name]["orders"] += 1
-            contributions[name]["quantity"] += int(round(qty))
-            contributions[name]["returns"] += round(ret, 2)
+        contributions[name]["orders"] += 1
+        contributions[name]["quantity"] += int(round(qty))
+        contributions[name]["returns"] += round(ret, 2)
 
     for name in SHAREHOLDERS:
         returns = contributions[name]["returns"]
         contributions[name]["percentage_of_returns"] = round((returns / total_returns) * 100, 2) if total_returns else 0.0
 
+    # Shared returns pool (if you still display this) now excludes Neutral amounts
     shared_returns = {name: round(SHARE_SPLIT[name] * total_returns, 2) for name in SHAREHOLDERS}
 
     return total_orders, int(round(total_quantity)), total_returns, contributions, shared_returns
@@ -127,20 +144,15 @@ def build_volume_data(volume_period, volume_start, volume_end):
     volume_data = defaultdict(int)
     for order in volume_orders:
         name = order.get("shareholder")
-        qty = int(round(_f(order.get("quantity"))))
-        if name in SHAREHOLDERS:
-            volume_data[name] += qty
+        if name in SHAREHOLDERS:  # Neutral excluded implicitly
+            volume_data[name] += int(round(_f(order.get("quantity"))))
 
     return volume_data
 
 # ---------------------
-# Tax storage (NEW: shared_tax collection)
+# Tax storage (shared_tax collection)
 # ---------------------
 def load_shared_tax(product):
-    """
-    Returns dict with per-L rates if present:
-      { total_tax, gra_tax, npa_life_tax, npa_component_tax }
-    """
     doc = shared_tax_col.find_one({"product": product})
     if not doc:
         return None
@@ -153,9 +165,6 @@ def load_shared_tax(product):
 
 
 def save_shared_tax(product, total_tax, gra_tax, npa_life_tax, npa_component_tax):
-    """
-    Upsert manual rates per product into shared_tax.
-    """
     shared_tax_col.update_one(
         {"product": product},
         {"$set": {
@@ -169,26 +178,15 @@ def save_shared_tax(product, total_tax, gra_tax, npa_life_tax, npa_component_tax
         upsert=True
     )
 
+
 def derive_rates_for_product(product, start, end):
-    """
-    Final source of truth for rates (per L), with override support via query params:
-      ?total_tax_override, ?gra_tax_override, ?npa_life_override, ?npa_component_override
-    Priority:
-      1) Query param overrides (all present)
-      2) shared_tax collection values (manual entries)
-      3) Minimal fallbacks (compute missing pieces if partially provided)
-    """
     # 1) overrides
     qt = request.args.get("total_tax_override")
     qg = request.args.get("gra_tax_override")
     qnl = request.args.get("npa_life_override")
     qnc = request.args.get("npa_component_override")
     if all(x is not None and str(x).strip() != "" for x in [qt, qg, qnl, qnc]):
-        total_tax = _f(qt)
-        gra_tax = _f(qg)
-        npa_life_tax = _f(qnl)
-        npa_component_tax = _f(qnc)
-        return total_tax, gra_tax, npa_life_tax, npa_component_tax
+        return _f(qt), _f(qg), _f(qnl), _f(qnc)
 
     # 2) shared_tax storage
     stored = load_shared_tax(product)
@@ -197,30 +195,19 @@ def derive_rates_for_product(product, start, end):
         gra_tax = stored.get("gra_tax", 0.0)
         npa_life_tax = stored.get("npa_life_tax", None)
         npa_component_tax = stored.get("npa_component_tax", None)
-
-        # 3) compute missing parts if needed
         if npa_life_tax is None:
             npa_life_tax = max(total_tax - gra_tax, 0.0)
         if npa_component_tax is None:
-            # if not explicitly provided, attempt to compute as npa_life - life_component,
-            # but without life_component explicitly, we cannot guess; keep 0.0 default.
-            # We'll try a conservative calc using total - gra - max(life_component, 0). Unknown life_component => 0.
             npa_component_tax = max(total_tax - gra_tax, 0.0)
         return total_tax, gra_tax, npa_life_tax, npa_component_tax
 
-    # No data: default all zeros (explicitly manual system)
+    # No data
     return 0.0, 0.0, 0.0, 0.0
 
 # ---------------------
 # Per‑product monthly/custom tax breakdown (+ multi‑product)
 # ---------------------
 def parse_tax_period_args():
-    """
-    Supports:
-      - month_tax=YYYY-MM
-      - OR custom_tax_start=YYYY-MM-DD & custom_tax_end=YYYY-MM-DD
-    Defaults to current month.
-    """
     month = (request.args.get("month_tax") or "").strip()
     s = (request.args.get("custom_tax_start") or "").strip()
     e = (request.args.get("custom_tax_end") or "").strip()
@@ -247,14 +234,7 @@ def parse_tax_period_args():
 
 
 def parse_selected_products():
-    """
-    Accepts either:
-      - multi-select via ?tax_product=ProdA&tax_product=ProdB
-      - or comma-separated via ?tax_products=ProdA,ProdB
-      - or single ?tax_product=ProdA
-      - or 'all' to include all distinct products
-    """
-    products = request.args.getlist("tax_product")  # multiple allowed
+    products = request.args.getlist("tax_product")
     if not products:
         csv = (request.args.get("tax_products") or "").strip()
         if csv:
@@ -267,7 +247,6 @@ def parse_selected_products():
     if len(products) == 1 and products[0].lower() == "all":
         products = distinct_products()
 
-    # Ensure valid & deduped
     dp = set(distinct_products())
     products = [p for p in products if p in dp]
     if not products and dp:
@@ -277,8 +256,10 @@ def parse_selected_products():
 
 def fetch_orders_for_tax(product, start, end):
     q_base = {"status": "approved", "product": product, "date": {"$gte": start, "$lt": end}}
-    main_q = dict(q_base, **{"shareholder": {"$ne": "neutral"}})
-    neutral_q = dict(q_base, **{"shareholder": "neutral"})
+    # Case-insensitive Neutral handling
+    neutral_regex = {"$regex": "^neutral$", "$options": "i"}
+    main_q = dict(q_base, **{"shareholder": {"$not": neutral_regex}})
+    neutral_q = dict(q_base, **{"shareholder": neutral_regex})
     main_orders = list(orders_col.find(main_q))
     neutral_orders = list(orders_col.find(neutral_q))
     return main_orders, neutral_orders
@@ -294,25 +275,15 @@ def summarize_orders_for_tax(orders):
 
 
 def build_tax_breakdown_for_product(product, start, end):
-    """
-    Returns one product's breakdown as:
-      {
-        product, volume_main, volume_neutral, neutral_total_returns,
-        rates: {...}, rows: [...], split_rows: [...]
-      }
-    All per-L rates come from shared_tax (or overrides). Share splits are based on NPA Component only.
-    """
     main_orders, neutral_orders = fetch_orders_for_tax(product, start, end)
     vol_main, _ = summarize_orders_for_tax(main_orders)
     vol_neutral, returns_neutral = summarize_orders_for_tax(neutral_orders)
 
-    # Final authoritative rates (manual)
     total_tax, gra_tax, npa_life_tax, npa_component_tax = derive_rates_for_product(product, start, end)
 
-    # Derive life_component as (NPA/Life - NPA Component), not used for splits but shown for completeness
     life_component_tax = max(npa_life_tax - npa_component_tax, 0.0)
 
-    # Amounts (exclude neutral)
+    # Amounts (exclude neutral by using vol_main only)
     amt_total_tax = round(total_tax * vol_main, 2)
     amt_gra_tax = round(gra_tax * vol_main, 2)
     amt_npa_life = round(npa_life_tax * vol_main, 2)
@@ -327,7 +298,7 @@ def build_tax_breakdown_for_product(product, start, end):
         {"label": "NPA Component",   "rate": round(npa_component_tax,4), "amount": amt_npa_component},
     ]
 
-    # Shareholder split strictly on NPA Component
+    # Split strictly on NPA Component (exclude neutral volume)
     split_rows = []
     for name, pct in SHARE_SPLIT.items():
         rate = round(npa_component_tax * pct, 4)   # per L
@@ -352,23 +323,22 @@ def build_tax_breakdown_for_product(product, start, end):
 
 
 def build_tax_breakdown(products, start, end):
-    """Multi-product support. Returns list of product breakdowns."""
     return [build_tax_breakdown_for_product(p, start, end) for p in products]
 
-# ✅ Main Route - Handles Everything
+# ✅ Main Route
 @shareholders_bp.route('/shareholders')
 def view_shareholders():
-    # ── Summary filters (existing)
+    # Summary filters
     period = request.args.get("period", "all")
     start_date = request.args.get("start")
     end_date = request.args.get("end")
 
-    # ── Volume chart filters (existing)
+    # Volume chart filters
     volume_period = request.args.get("volume_period", "all")
     volume_start = request.args.get("volume_start")
     volume_end = request.args.get("volume_end")
 
-    # ── New: per‑product tax filters
+    # Per‑product tax filters
     tax_start, tax_end, tax_period_kind, tax_month_str = parse_tax_period_args()
     selected_products = parse_selected_products()
     all_products = distinct_products()
@@ -383,13 +353,11 @@ def view_shareholders():
 
     return render_template(
         "partials/shareholders.html",
-
-        # existing context
         total_orders=total_orders,
         total_quantity=total_quantity,
-        total_returns=total_returns,
+        total_returns=total_returns,                  # Neutral returns excluded
         contributions=contributions,
-        shared_returns=shared_returns,
+        shared_returns=shared_returns,                # Based on excluded total_returns
         period=period,
         start_date=start_date,
         end_date=end_date,
@@ -397,29 +365,18 @@ def view_shareholders():
         volume_period=volume_period,
         volume_start=volume_start,
         volume_end=volume_end,
-
-        # tax context
-        tax_all_products=all_products,                  # list of all distinct products for UI (multi-select)
-        tax_selected_products=selected_products,        # which ones are selected
-        tax_breakdowns=tax_breakdowns,                  # list of blocks (one per product)
+        tax_all_products=all_products,
+        tax_selected_products=selected_products,
+        tax_breakdowns=tax_breakdowns,
         tax_period_kind=tax_period_kind,
         tax_month_str=tax_month_str,
         tax_start_str=tax_start.strftime("%Y-%m-%d"),
         tax_end_str=(tax_end - timedelta(days=1)).strftime("%Y-%m-%d"),
     )
 
-# ✅ Update product tax (Total, GRA, NPA/Life, NPA Component) via POST (form or JSON)
+# ✅ Upsert manual tax rates
 @shareholders_bp.route('/shareholders/shared_tax_update', methods=['POST'])
 def shareholders_shared_tax_update():
-    """
-    Upsert manual tax rates for a product into shared_tax.
-    Accepts form or JSON:
-      product: str (required)
-      total_tax: float (required)
-      gra_tax: float (required)
-      npa_life_tax: float (required)
-      npa_component_tax: float (required)
-    """
     data = request.get_json(silent=True) or request.form
     product = (data.get('product') or '').strip()
     total_tax = data.get('total_tax')
@@ -450,7 +407,7 @@ def shareholders_shared_tax_update():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ✅ Debug JSON to compare with Excel numbers
+# ✅ Debug JSON
 @shareholders_bp.route("/shareholders/tax_debug.json")
 def shareholders_tax_debug():
     selected_products = parse_selected_products()
