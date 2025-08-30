@@ -36,7 +36,7 @@
 <div class="container py-5">
   <div class="d-flex align-items-center justify-content-between mb-4">
     <h3 class="mb-0">🛢️ Manage Products</h3>
-    <span class="text-muted small">Share prices to clients via WhatsApp, Facebook & more</span>
+    <span class="text-muted small">Share prices to clients via WhatsApp</span>
   </div>
 
   <!-- Add Product Form -->
@@ -107,7 +107,7 @@
   </div>
 </div>
 
-<!-- Share Modal (structure preserved) -->
+<!-- Share Modal -->
 <div class="modal fade" id="shareModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-fullscreen-sm-down">
     <form id="shareForm" class="modal-content">
@@ -127,8 +127,8 @@
           <label class="form-label fw-semibold">Message</label>
           <textarea id="shareMessage" class="form-control" rows="4" required></textarea>
           <div class="d-flex gap-2 mt-2">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCopyMessage">Copy message</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnCopyLinks">Copy all WhatsApp links</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCopyMessage" type="button">Copy message</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnCopyLinks" type="button">Copy all WhatsApp links</button>
           </div>
         </div>
 
@@ -136,7 +136,7 @@
           <label class="form-label fw-semibold mb-0">Select Clients</label>
           <div class="d-flex align-items-center gap-2">
             <input type="text" id="clientSearch" class="form-control form-control-sm" placeholder="Search clients..." style="max-width:220px;">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSelectAll">Select All</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSelectAll" type="button">Select All</button>
             <span class="chip" id="selectedCount">0 selected</span>
           </div>
         </div>
@@ -158,26 +158,19 @@
 <script>
 let productsById = new Map();
 let priceChart;
-let currentChannel = 'whatsapp';
 let lastBuiltLinks = [];
 
 function money(n){ return Number(n || 0).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}); }
 function toast(msg, type='info'){
   const el = document.createElement('div');
   el.className = `alert alert-${type} position-fixed top-0 end-0 m-3 shadow`;
-  el.style.zIndex = 1080;
-  el.textContent = msg;
-  document.body.appendChild(el);
+  el.style.zIndex = 1080; el.textContent = msg; document.body.appendChild(el);
   setTimeout(()=> el.remove(), 3200);
 }
 
 // ---------- Load & Render Products ----------
 function loadProducts() {
-  $.ajax({
-    url: '/products/load',
-    method: 'GET',
-    cache: false
-  })
+  $.ajax({ url: '/products/load', method: 'GET', cache: false })
   .done(function(data) {
     productsById.clear();
     const list = $('#productList').empty();
@@ -223,7 +216,6 @@ $(document).on('click', '.btn-edit', function(){
   const id = $(this).data('id');
   const product = productsById.get(String(id));
   if(!product) return;
-
   const form = $('#editProductForm');
   form.find('[name="product_id"]').val(product._id);
   form.find('[name="name"]').val(product.name || '');
@@ -246,17 +238,8 @@ $('#editProductForm').on('submit', function(e){
     p_tax: $(this).find('[name="p_tax"]').val(),
     description: $(this).find('[name="description"]').val()
   };
-  $.ajax({
-    url: `/products/update/${id}`,
-    method: 'POST',
-    contentType: 'application/json',
-    data: JSON.stringify(formData)
-  })
-  .done(() => {
-    $('#editModal').modal('hide');
-    toast('Product updated','success');
-    loadProducts();
-  })
+  $.ajax({ url: `/products/update/${id}`, method: 'POST', contentType: 'application/json', data: JSON.stringify(formData) })
+  .done(() => { $('#editModal').modal('hide'); toast('Product updated','success'); loadProducts(); })
   .fail(() => toast('Update failed','danger'));
 });
 
@@ -264,14 +247,8 @@ $('#editProductForm').on('submit', function(e){
 $(document).on('click', '.btn-delete', function(){
   const id = $(this).data('id');
   if (!confirm('Delete this product?')) return;
-  $.ajax({
-    url: `/products/delete/${id}`,
-    method: 'DELETE'
-  })
-  .done((res) => {
-    if(res && res.success){ toast('Deleted','success'); loadProducts(); }
-    else toast('Delete failed','danger');
-  })
+  $.ajax({ url: `/products/delete/${id}`, method: 'DELETE' })
+  .done((res) => { if(res && res.success){ toast('Deleted','success'); loadProducts(); } else toast('Delete failed','danger'); })
   .fail(() => toast('Delete failed','danger'));
 });
 
@@ -290,33 +267,14 @@ function renderTrend(product){
     { label: 'S-Price', data: s_prices, borderColor: '#0d6efd', fill: false, tension: .3 },
     { label: 'P-Price', data: p_prices, borderColor: '#198754', fill: false, tension: .3 }
   ];
-  if (s_taxes.some(v => typeof v === 'number')) {
-    datasets.push({ label: 'S-Tax', data: s_taxes, borderColor: '#dc3545', fill: false, tension: .3 });
-  }
-  if (p_taxes.some(v => typeof v === 'number')) {
-    datasets.push({ label: 'P-Tax', data: p_taxes, borderColor: '#6f42c1', fill: false, tension: .3 });
-  }
+  if (s_taxes.some(v => typeof v === 'number')) datasets.push({ label: 'S-Tax', data: s_taxes, borderColor: '#dc3545', fill: false, tension: .3 });
+  if (p_taxes.some(v => typeof v === 'number')) datasets.push({ label: 'P-Tax', data: p_taxes, borderColor: '#6f42c1', fill: false, tension: .3 });
 
-  priceChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      plugins: {
-        title: { display: true, text: `Price & Tax Trend for ${product.name}` },
-        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: GHS ${money(ctx.parsed.y)}` } }
-      },
-      scales: { y: { ticks: { callback: (v)=> 'GHS ' + money(v) } } }
-    }
-  });
+  priceChart = new Chart(ctx, { type: 'line', data: { labels, datasets }, options: { responsive: true, plugins: { title: { display: true, text: `Price & Tax Trend for ${product.name}` }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: GHS ${money(ctx.parsed.y)}` } } }, scales: { y: { ticks: { callback: (v)=> 'GHS ' + money(v) } } } } });
 }
-
 $(document).on('click', '.btn-trend', function(){
-  const id = $(this).data('id');
-  const product = productsById.get(String(id));
-  if (!product) return;
-  renderTrend(product);
-  new bootstrap.Modal(document.getElementById('priceTrendModal')).show();
+  const id = $(this).data('id'); const product = productsById.get(String(id)); if (!product) return;
+  renderTrend(product); new bootstrap.Modal(document.getElementById('priceTrendModal')).show();
 });
 
 // ---------- Add ----------
@@ -331,25 +289,12 @@ $('#addProductForm').on('submit', function(e) {
     p_tax: $form.find('[name="p_tax"]').val(),
     description: $form.find('[name="description"]').val()
   };
-  $.ajax({
-    url: '/products/add',
-    method: 'POST',
-    contentType: 'application/json',
-    data: JSON.stringify(formData),
-    cache: false
-  })
-  .done(() => {
-    $form[0].reset();
-    toast('Product added','success');
-    loadProducts();
-  })
-  .fail((xhr) => {
-    console.error('Add failed', xhr?.responseText || xhr?.statusText);
-    toast('Add failed','danger');
-  });
+  $.ajax({ url: '/products/add', method: 'POST', contentType: 'application/json', data: JSON.stringify(formData), cache: false })
+  .done(() => { $form[0].reset(); toast('Product added','success'); loadProducts(); })
+  .fail((xhr) => { console.error('Add failed', xhr?.responseText || xhr?.statusText); toast('Add failed','danger'); });
 });
 
-// ---------- Clients loader (unchanged helpers you already had) ----------
+// ---------- Clients loader ----------
 let cachedClients = [];
 async function loadClients(){
   try{
@@ -387,12 +332,90 @@ $('#btnSelectAll').on('click', function(){
   this.textContent = shouldSelect ? 'Unselect All' : 'Select All';
   updateSelectedCount();
 });
-document.addEventListener('change', (e)=>{ if (e.target.classList.contains('client-check')) updateSelectedCount(); });
+$(document).on('change', '.client-check', updateSelectedCount);
 
-// ---------- Init: DO THIS! ----------
-$(document).ready(function(){
-  loadProducts();            // <-- critical
+// ---------- SHARE: open modal, prefill message, build links, open chats ----------
+$(document).on('click', '.btn-share', async function(){
+  const id = String($(this).data('id'));
+  const product = productsById.get(id);
+  if(!product){ toast('Product not found','danger'); return; }
+
+  // badge + hidden inputs
+  $('#shareProductId').val(id);
+  $('#shareProductNameBadge').text(product.name || '').prop('hidden', !(product.name||'').length);
+  $('#btnCopyLinks').addClass('d-none');
+  lastBuiltLinks = [];
+
+  // fetch default message from backend
+  try {
+    const res = await fetch(`/products/share/default_message?product_id=${encodeURIComponent(id)}`);
+    const data = await res.json();
+    if(data && data.success) {
+      $('#shareMessage').val(data.message);
+    } else {
+      // fallback message
+      const s = typeof product.s_price === 'number' ? product.s_price : Number(product.s_price||0);
+      const p = typeof product.p_price === 'number' ? product.p_price : Number(product.p_price||0);
+      $('#shareMessage').val(`Price update — ${product.name || 'Product'}\nS-Price: ${s.toFixed(2)}\nP-Price: ${p.toFixed(2)}`);
+    }
+  } catch (e) {
+    $('#shareMessage').val(`Price update — ${product.name || 'Product'}\nS-Price: ${Number(product.s_price||0).toFixed(2)}`);
+  }
+
+  // load clients (only once per page load)
+  if(!cachedClients.length) await loadClients(); else renderClientList();
+
+  new bootstrap.Modal(document.getElementById('shareModal')).show();
 });
+
+$('#btnCopyMessage').on('click', async () => {
+  try { await navigator.clipboard.writeText($('#shareMessage').val()); toast('Message copied','success'); }
+  catch { toast('Copy failed','danger'); }
+});
+
+$('#btnCopyLinks').on('click', async () => {
+  if(!lastBuiltLinks.length){ toast('No links yet','warning'); return; }
+  const txt = lastBuiltLinks.map(l => l.url).join('\n');
+  try { await navigator.clipboard.writeText(txt); toast('Links copied','success'); }
+  catch { toast('Copy failed','danger'); }
+});
+
+$('#shareForm').on('submit', async function(e){
+  e.preventDefault();
+  const product_id = $('#shareProductId').val();
+  const message = ($('#shareMessage').val() || '').trim();
+  const client_ids = [...document.querySelectorAll('#clientList .client-check:checked')].map(cb => cb.value);
+  if(!product_id){ toast('Missing product','danger'); return; }
+  if(!message){ toast('Write a message','warning'); return; }
+  if(!client_ids.length){ toast('Select at least one client','warning'); return; }
+
+  try {
+    const res = await fetch('/products/share/build', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_id, message, client_ids })
+    });
+    const data = await res.json();
+    if(!data.success){ toast(data.message || 'Failed to build links','danger'); return; }
+
+    lastBuiltLinks = Array.isArray(data.links) ? data.links : [];
+    if(!lastBuiltLinks.length){ toast('No valid WhatsApp numbers for selected clients','warning'); return; }
+
+    // open each wa.me link in a new tab (browser will usually allow a few)
+    lastBuiltLinks.forEach((link, idx) => {
+      const url = link.url || (`https://wa.me/${link.number}?text=${encodeURIComponent(message)}`);
+      setTimeout(() => window.open(url, '_blank'), idx * 150);
+    });
+
+    $('#btnCopyLinks').removeClass('d-none');
+    toast('Opening WhatsApp chats…','success');
+  } catch (err) {
+    console.error(err);
+    toast('Share failed','danger');
+  }
+});
+
+// ---------- Init ----------
+$(document).ready(function(){ loadProducts(); });
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
