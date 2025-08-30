@@ -1,3 +1,4 @@
+
 from flask import Blueprint, render_template, request, jsonify
 from bson import ObjectId
 from datetime import datetime
@@ -229,7 +230,7 @@ def default_share_message():
     name = p.get("name") or "Product"
     s_price = _to_float(p.get("s_price"))
     p_price = _to_float(p.get("p_price"))
-    msg = f"Price update — {name}\nS-Price: {s_price:.2f}\nP-Price: {p_price:.2f}"
+    msg = f"Price update — {name}\nS-Price: {s_price:.2f}"
     return jsonify({"success": True, "message": msg})
 
 # -------- Build WhatsApp share links (unchanged) --------
@@ -297,3 +298,4 @@ def build_share_links():
         links.append({"client_id": cid, "name": name, "number": wa_number, "url": url})
 
     return jsonify({"success": True, "links": links, "message": custom_msg})
+
