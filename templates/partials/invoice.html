@@ -126,13 +126,12 @@
             {% set has_stax = stax > 0 %}
             {% set has_sbdc = sbdc > 0 %}
 
-            {# === NEW: Collapse to combo when both exist; otherwise show the one that exists === #}
             {% if has_stax and has_sbdc %}
               <tr>
                 <td class="k">Rate (GHS/L)</td>
                 <td class="v mono" id="comboPerL">
                   {{ '{:,.2f}'.format(stax + sbdc) }}
-                  <span class="chip" style="margin-left:.5rem;">S‑BDC + S‑Tax</span>
+                  <span class="chip" style="margin-left:.5rem;">S-BDC + S-Tax</span>
                 </td>
               </tr>
             {% elif has_stax %}
@@ -158,7 +157,6 @@
           {% set computed_debt = per_l * q %}
           {% set total_debt = (order.total_debt is not none) and order.total_debt or computed_debt %}
 
-          {# === NEW: Show ONE line if both present (Combo); else show the available one === #}
           {% if has_stax and has_sbdc %}
             <div class="row">
               <div class="label"></div>
@@ -166,12 +164,12 @@
             </div>
           {% elif has_stax %}
             <div class="row">
-              <div class="label">S‑Tax × Quantity</div>
+              <div class="label">S-Tax × Quantity</div>
               <div class="value mono" id="taxTotal">GHS {{ '{:,.2f}'.format(stax * q) }}</div>
             </div>
           {% elif has_sbdc %}
             <div class="row">
-              <div class="label">S‑BDC × Quantity</div>
+              <div class="label">S-BDC × Quantity</div>
               <div class="value mono" id="bdcTotal">GHS {{ '{:,.2f}'.format(sbdc * q) }}</div>
             </div>
           {% else %}
@@ -204,10 +202,18 @@
     </div>
   </div>
 
-  <!-- Build static QR URL that encodes a plain-text summary of the order -->
+  <!-- html2pdf.js (bundled: html2canvas + jsPDF) -->
+  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+
+  <!-- Build static QR URL that encodes a plain-text summary, THEN auto-generate+download PDF -->
   <script>
     (function () {
       function val(id){const el=document.getElementById(id);return el?el.textContent.trim():"";}
+      function sanitize(s){
+        return String(s||'').replace(/\s+/g,'_').replace(/[^A-Za-z0-9_.-]/g,'').substring(0,120) || 'invoice';
+      }
+
+      // Build QR content first (so it's rendered before capture)
       const lines = [
         "TrueType Services • Order Invoice",
         "--------------------------------",
@@ -227,31 +233,66 @@
         `Quantity (L): ${val('qty')}`,
         `Region: ${val('region')}`
       ];
-
-      // Include whichever rate rows exist
       const comboPerL = val('comboPerL');
       const staxPerL  = val('stax');
       const sbdcPerL  = val('sbdc');
       if (comboPerL) lines.push(`combo price (GHS/L): ${comboPerL} `);
       if (!comboPerL && staxPerL) lines.push(`Tax price (GHS/L): ${staxPerL}`);
       if (!comboPerL && sbdcPerL) lines.push(`BDC price (GHS/L): ${sbdcPerL}`);
-
-      // Include whichever total rows exist
       const comboTotal = val('comboTotal');
       const taxTotal   = val('taxTotal');
       const bdcTotal   = val('bdcTotal');
       if (comboTotal) lines.push(`Combo × Qty: ${comboTotal}`);
       if (taxTotal)   lines.push(`S-Tax × Qty: ${taxTotal}`);
       if (bdcTotal)   lines.push(`S-BDC × Qty: ${bdcTotal}`);
-
       lines.push(`Total Debt: ${val('grandTotal')}`);
-
       const text = lines.join("\n");
-      const url = "https://api.qrserver.com/v1/create-qr-code/?size=128x128&data=" + encodeURIComponent(text);
-      const img = document.getElementById('qrImg');
-      if (img) img.src = url;
+      const qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=128x128&data=" + encodeURIComponent(text);
+      const qrImg = document.getElementById('qrImg');
+      if (qrImg) qrImg.src = qrUrl;
+
+      // Build filename: invoice_<ORDER_ID>__<CLIENT_ID>__<CLIENT_NAME>.pdf
+      const orderId  = sanitize(val('orderId'));
+      const clientId = sanitize(val('cid'));
+      const clientNm = sanitize(val('cname'));
+      const filename = `invoice_${orderId}__${clientId}__${clientNm}.pdf`;
+
+      // Wait for images (logo + QR) to finish loading before rendering to PDF
+      function waitForImages() {
+        const imgs = Array.from(document.images || []);
+        const pending = imgs.filter(img => !img.complete || (typeof img.naturalWidth !== "number") || img.naturalWidth === 0);
+        if (pending.length === 0) return Promise.resolve();
+        return Promise.all(pending.map(img => new Promise(resolve => {
+          img.addEventListener('load',  resolve, {once:true});
+          img.addEventListener('error', resolve, {once:true}); // still resolve to not block forever
+        })));
+      }
+
+      function savePDF() {
+        const invoiceEl = document.getElementById('invoice');
+        if (!invoiceEl) return;
+
+        // A4 options; increase scale for better quality
+        const opt = {
+          margin:       [10, 10, 10, 10], // mm
+          filename:     filename,
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' },
+          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak:    { mode: ['css', 'legacy'] }
+        };
+
+        // Trigger download immediately on load
+        html2pdf().set(opt).from(invoiceEl).save();
+      }
+
+      // Ensure DOM + images ready, then save
+      if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        waitForImages().then(savePDF);
+      } else {
+        document.addEventListener('DOMContentLoaded', () => waitForImages().then(savePDF));
+      }
     })();
   </script>
 </body>
 </html>
-
