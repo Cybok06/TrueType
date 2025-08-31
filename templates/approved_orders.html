@@ -51,6 +51,8 @@
       <thead class="table-dark">
         <tr>
           <th><i class="bi bi-calendar3"></i><br>Date</th>
+          <!-- ✅ NEW COLUMN -->
+          <th><i class="bi bi-clock-history"></i><br>Approved At</th>
           <th><i class="bi bi-person-circle"></i><br>Client</th>
           <th><i class="bi bi-truck"></i><br>Vehicle #</th>
           <th><i class="bi bi-geo-alt"></i><br>Region</th>
@@ -80,6 +82,16 @@
         {% set left_amt = (order.total_debt or 0.0) - (order.amount_paid or 0.0) %}
         <tr>
           <td>{{ order.date.strftime('%d-%b-%Y') if order.date else '-' }}</td>
+
+          <!-- ✅ NEW CELL: show approved date/time if present -->
+          <td>
+            {% if order.approved_at %}
+              {{ order.approved_at.strftime('%d-%b-%Y %H:%M') }} GMT
+            {% else %}
+              -
+            {% endif %}
+          </td>
+
           <td>
             <a href="/admin/client/{{ order.client_mongo_id }}" class="text-decoration-none fw-semibold text-primary">
               {{ order.client_name }}
@@ -153,7 +165,8 @@
       scrollX: true,
       ordering: true,
       pageLength: 50,
-      order: [[0, 'desc']],
+      // ✅ sort by Approved At (new column index = 1)
+      order: [[1, 'desc']],
       dom: 'Bfrtip',
       buttons: [
         {
