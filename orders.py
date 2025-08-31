@@ -1,16 +1,17 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
 from bson import ObjectId, errors
 from db import db
-from datetime import datetime
+from datetime import datetime, date
 
 orders_bp = Blueprint('orders', __name__, template_folder='templates')
 
 orders_collection        = db['orders']
 clients_collection       = db['clients']
 bdc_collection           = db['bdc']
-products_collection      = db['products']   # Products collection
-omc_collection           = db['bd_omc']     # OMCs (with rep_phone)
-s_bdc_payment_collection = db['s_bdc_payment']  # ✅ central payment collection
+products_collection      = db['products']         # Products collection
+omc_collection           = db['bd_omc']           # OMCs (with rep_phone)
+s_bdc_payment_collection = db['s_bdc_payment']    # central BDC payment collection
+omc_payment_collection   = db['omc_payment']      # ✅ NEW: simple OMC-side posting collection
 
 # --------------- helpers ---------------
 def _f(v):
@@ -23,6 +24,35 @@ def _f(v):
 def _nz(v):
     """None -> 0.0 without changing real zeros"""
     return v if v is not None else 0.0
+
+def _as_dt(d):
+    """best effort to parse a date/datetime or return None"""
+    if isinstance(d, datetime):
+        return d
+    if isinstance(d, date):
+        return datetime(d.year, d.month, d.day)
+    if isinstance(d, str):
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(d, fmt)
+            except Exception:
+                pass
+    return None
+
+def human_order_id(order) -> str:
+    """
+    ✅ NEW: Resolve your human-generated order id (not Mongo _id).
+    Tries common keys; otherwise creates a safe fallback.
+    """
+    for k in ("order_id", "order_no", "order_code", "order_number", "order_ref", "public_id"):
+        v = order.get(k)
+        if v:
+            return str(v)
+    # Fallback: ORD-YYMMDD-XXXXXX (last 6 of ObjectId)
+    created = _as_dt(order.get("date")) or datetime.utcnow()
+    ts = created.strftime("%y%m%d")
+    tail = str(order.get("_id"))[-6:].upper()
+    return f"ORD-{ts}-{tail}"
 
 # --------------- pages ---------------
 @orders_bp.route('/', methods=['GET'])
@@ -135,6 +165,10 @@ def update_order(order_id):
     except Exception:
         client = None
 
+    # Human order id for postings (NOT the Mongo _id)
+    # ✅ NEW: resolve once and reuse
+    human_id = human_order_id(order)
+
     # Parse numeric inputs
     def _f(v):
         try: return float(v)
@@ -175,7 +209,7 @@ def update_order(order_id):
     returns_tax   = _nz(margin_tax) * q
     returns_total = returns_price + returns_tax
 
-    # Build update doc (unchanged)
+    # Build update doc
     update_data = {
         "omc": fields["omc"],
         "depot": fields["depot"],
@@ -190,6 +224,7 @@ def update_order(order_id):
         "returns_stax": round(returns_tax, 2),
         "returns_total": round(returns_total, 2),
         "returns": round(returns_total, 2),
+        # keep your legacy 'margin' but also 'margin_price'
     }
     if margin_price is not None:
         update_data["margin_price"] = round(margin_price, 2)
@@ -222,11 +257,9 @@ def update_order(order_id):
         update_data["bdc_name"] = bdc.get("name", "")
 
     # ---------------------------
-    # Payment handling -> s_bdc_payment
-    #  Cash NOW behaves like From Account / Credit:
-    #   - create as bank_status="pending"
-    #   - no immediate bank_paid_total/history on insert
-    #   - clearing happens ONLY via bank-profile allocations
+    # Payment handling -> s_bdc_payment  (BDC payable)
+    # Cash / From Account / Credit => create pending record (no auto-bank clearing)
+    # Include the human-order-id in the doc.   ✅ NEW
     # ---------------------------
     payment_type_norm = (fields["payment_type"] or "").strip().lower()
 
@@ -237,9 +270,12 @@ def update_order(order_id):
         calc_amount = round(q * p, 2)
 
         payment_entry = {
-            "order_id": ObjectId(order_id),
+            # keep a link by Mongo id for joins if you like:
+            "order_oid": ObjectId(order_id),
+            # and store the human-facing id explicitly (what you asked for):
+            "order_id": human_id,                      # ✅ NEW: human order id
             "bdc_id": bdc_id,
-            "payment_type": fields["payment_type"],  # keep original case
+            "payment_type": fields["payment_type"],    # original case
             "amount": calc_amount,
             "client_name": client_name or "—",
             "product": order.get("product", ""),
@@ -250,33 +286,59 @@ def update_order(order_id):
             "region": order.get("region", ""),
             "delivery_status": "pending",
             "shareholder": fields["shareholder"] or None,
-            "bank_status": "pending",         # ← unified behavior for cash/from account/credit
-            # NOTE: no bank_paid_total / bank_paid_history here
+            "bank_status": "pending",
             "date": datetime.utcnow()
         }
-
-        # If you want to remember user's chosen bank as a *hint* (no allocation),
-        # uncomment the next two lines:
-        # if fields["bank_id"] and ObjectId.is_valid(fields["bank_id"]):
-        #     payment_entry["intended_bank_id"] = ObjectId(fields["bank_id"])
-
         s_bdc_payment_collection.insert_one(payment_entry)
+
+    # ---------------------------
+    # OMC-side posting (their “returns”/margin receivable)
+    # If there’s a positive returns_total, record an OMC receivable stub.
+    # Also embed the human order id.   ✅ NEW
+    # ---------------------------
+    if returns_total and returns_total > 0:
+        omc_payment_collection.insert_one({
+            "order_oid": ObjectId(order_id),
+            "order_id": human_id,                 # ✅ NEW: human order id
+            "omc_name": fields["omc"],
+            "amount": round(returns_total, 2),
+            "returns_price": round(returns_price, 2),
+            "returns_tax": round(returns_tax, 2),
+            "status": "pending",
+            "shareholder": fields["shareholder"] or None,
+            "product": order.get("product", ""),
+            "quantity": order.get("quantity", ""),
+            "region": order.get("region", ""),
+            "created_at": datetime.utcnow()
+        })
 
     # Status flags
     complete_fields = (update_data.get("total_debt") is not None) and (
         (mode == "s_tax" and ("returns_total" in update_data or "margin_tax" in update_data)) or
         (mode in ("s_bdc", "combo") and ("returns_total" in update_data or "margin" in update_data))
     )
-    update_data["status"] = "approved" if complete_fields else "pending"
+    new_status = "approved" if complete_fields else "pending"
+    update_data["status"] = new_status
     update_data["delivery_status"] = "pending"
+
+    # ✅ NEW: stamp approved_at when transitioning to approved
+    prev = orders_collection.find_one({"_id": ObjectId(order_id)}, {"status": 1, "approved_at": 1})
+    if new_status == "approved" and (not prev or prev.get("status") != "approved"):
+        update_data["approved_at"] = datetime.utcnow()   # stamp now
 
     orders_collection.update_one({"_id": ObjectId(order_id)}, {"$set": update_data})
 
-    approved = (update_data["status"] == "approved")
-    resp = {"success": True, "message": "Order updated" + (" and approved" if approved else " (still pending)")}
+    approved = (new_status == "approved")
+    resp = {
+        "success": True,
+        "message": "Order updated" + (" and approved" if approved else " (still pending)"),
+        "approved": approved
+    }
     if approved:
-        resp["approved"] = True
+        resp["approved_at"] = (update_data.get("approved_at") or prev.get("approved_at"))
         resp["invoice_url"] = url_for("orders.order_invoice", order_id=order_id)
+        # also include the human id for client-side use if you want to display it
+        resp["order_id"] = human_id  # ✅ NEW
     return jsonify(resp)
 
 @orders_bp.route('/get_product_price', methods=['GET'])
